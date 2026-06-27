@@ -49,6 +49,68 @@ def compute_shap_importance(
     return mean_abs
 
 
+def compute_shap_interactions(
+    model: Any,
+    data: pd.DataFrame,
+    feature_names: list[str],
+    top_n: int = 10,
+) -> pd.DataFrame:
+    """
+    Compute pairwise SHAP interaction strengths between features.
+
+    Uses TreeExplainer.shap_interaction_values, which is significantly more
+    expensive than plain SHAP values (roughly O(features^2) per sample), so
+    this is intended to be called only when interaction analysis is
+    explicitly requested.
+
+    The raw interaction tensor has shape (n_samples, n_features, n_features).
+    It is reduced by taking the mean over samples and the absolute value,
+    producing an (n_features, n_features) matrix. The diagonal represents
+    each feature's main effect; off-diagonal entries represent pairwise
+    interaction strength. Since the matrix is symmetric, each unordered
+    pair is reported once.
+
+    Args:
+        model: A fitted XGBoost model (XGBClassifier or XGBRegressor).
+        data: Feature DataFrame (no target column) used for explanation.
+        feature_names: Ordered list of feature column names.
+        top_n: Number of strongest interacting pairs to return.
+
+    Returns:
+        DataFrame with columns feature_a, feature_b, interaction_strength,
+        sorted by interaction_strength descending, limited to top_n rows.
+    """
+    logger.info("Computing SHAP interaction values (this can be slow)")
+    explainer = shap.TreeExplainer(model)
+    interaction_values = explainer.shap_interaction_values(data[feature_names])
+
+    if isinstance(interaction_values, list):
+        # Older shap versions: multiclass returns a list of arrays, one per
+        # class, each shaped (n_samples, n_features, n_features).
+        stacked = np.stack([np.abs(iv) for iv in interaction_values], axis=0)
+        mean_abs = stacked.mean(axis=0).mean(axis=0)
+    elif interaction_values.ndim == 4:
+        # Newer shap versions: multiclass returns a single ndarray shaped
+        # (n_samples, n_features, n_features, n_classes).
+        mean_abs = np.abs(interaction_values).mean(axis=0).mean(axis=-1)
+    else:
+        mean_abs = np.abs(interaction_values).mean(axis=0)
+
+    n_features = len(feature_names)
+    rows = []
+    for i in range(n_features):
+        for j in range(i + 1, n_features):
+            rows.append((feature_names[i], feature_names[j], mean_abs[i, j]))
+
+    result = pd.DataFrame(
+        rows, columns=["feature_a", "feature_b", "interaction_strength"]
+    )
+    result = result.sort_values("interaction_strength", ascending=False).reset_index(
+        drop=True
+    )
+    return result.head(top_n)
+
+
 def _get_predictions(
     model: Any, X: pd.DataFrame, use_predict_proba: bool
 ) -> np.ndarray:

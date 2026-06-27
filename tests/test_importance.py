@@ -10,6 +10,7 @@ from sklearn.metrics import roc_auc_score
 from treeshaker.importance import (
     compute_permutation_importance,
     compute_shap_importance,
+    compute_shap_interactions,
 )
 from treeshaker.utils import get_metric_fn
 
@@ -106,6 +107,48 @@ def test_permutation_importance_default_is_predict(fitted_regression_model):
         model, df, "target", feature_names, metric_fn
     )
     assert importance.shape == (8,)
+
+
+def test_shap_interactions_columns(fitted_binary_model):
+    model, df, feature_names = fitted_binary_model
+    interactions = compute_shap_interactions(model, df, feature_names)
+    assert list(interactions.columns) == [
+        "feature_a",
+        "feature_b",
+        "interaction_strength",
+    ]
+
+
+def test_shap_interactions_top_n_limit(fitted_binary_model):
+    model, df, feature_names = fitted_binary_model
+    interactions = compute_shap_interactions(model, df, feature_names, top_n=3)
+    assert len(interactions) == 3
+
+
+def test_shap_interactions_sorted_descending(fitted_binary_model):
+    model, df, feature_names = fitted_binary_model
+    interactions = compute_shap_interactions(model, df, feature_names)
+    values = interactions["interaction_strength"].to_numpy()
+    assert (values[:-1] >= values[1:]).all()
+
+
+def test_shap_interactions_non_negative(fitted_binary_model):
+    model, df, feature_names = fitted_binary_model
+    interactions = compute_shap_interactions(model, df, feature_names)
+    assert (interactions["interaction_strength"] >= 0).all()
+
+
+def test_shap_interactions_pairs_distinct_features(fitted_binary_model):
+    model, df, feature_names = fitted_binary_model
+    interactions = compute_shap_interactions(model, df, feature_names)
+    assert (interactions["feature_a"] != interactions["feature_b"]).all()
+
+
+def test_shap_interactions_regression(fitted_regression_model):
+    model, df, feature_names = fitted_regression_model
+    interactions = compute_shap_interactions(model, df, feature_names, top_n=5)
+    assert len(interactions) <= 5
+    assert (interactions["interaction_strength"] >= 0).all()
 
 
 def test_permutation_importance_informative_features_positive(

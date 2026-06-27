@@ -1,13 +1,18 @@
 """Core feature selection pipeline orchestration."""
 
 import logging
+import os
 from typing import Any
 
 import pandas as pd
 
 from .config import Config
 from .harm_detection import HarmDetector
-from .importance import compute_permutation_importance, compute_shap_importance
+from .importance import (
+    compute_permutation_importance,
+    compute_shap_importance,
+    compute_shap_interactions,
+)
 from .leakage_detection import LeakageDetector
 from .utils import check_class_imbalance, get_metric_fn, load_csv, save_results
 
@@ -25,6 +30,8 @@ class FeatureSelectionPipeline:
     6. Flag harmful features using both importance signals.
     7. Detect data leakage warnings.
     8. Save results to CSV or HTML.
+    9. (Optional, opt-in) Compute pairwise SHAP interaction values and save
+       them to a separate `<output_stem>_interactions.csv` file.
 
     Args:
         config: A Config instance describing all pipeline settings.
@@ -46,6 +53,7 @@ class FeatureSelectionPipeline:
         self.model: Any = None
         self.feature_names: list[str] = []
         self.results: pd.DataFrame | None = None
+        self.interactions: pd.DataFrame | None = None
 
     def load_data(self) -> None:
         """
@@ -198,6 +206,12 @@ class FeatureSelectionPipeline:
             recommendation is "Drop", "Caution", or "Keep".
             reason is a plain English explanation (empty string if "Keep").
             Sorted by shap_importance descending.
+
+            If config.compute_shap_interactions is True, pairwise SHAP
+            interaction values are also computed and saved to
+            `<output_stem>_interactions.csv`, and made available on
+            self.interactions. This does not change the shape or schema
+            of the returned DataFrame.
         """
         self.load_data()
         if self.train_data is None or self.val_data is None:
@@ -279,6 +293,17 @@ class FeatureSelectionPipeline:
             output_file=self.config.output_file,
             output_format=self.config.output_format,
         )
+
+        if self.config.compute_shap_interactions:
+            self.interactions = compute_shap_interactions(
+                model=self.model,
+                data=self.val_data,
+                feature_names=self.feature_names,
+            )
+            stem, _ = os.path.splitext(self.config.output_file)
+            interactions_file = f"{stem}_interactions.csv"
+            self.interactions.to_csv(interactions_file, index=False)
+            self.logger.info(f"SHAP interaction values saved to {interactions_file}")
 
         n_drop = (self.results["recommendation"] == "Drop").sum()
         n_caution = (self.results["recommendation"] == "Caution").sum()

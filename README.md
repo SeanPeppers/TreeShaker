@@ -26,6 +26,7 @@ Automated feature selection using XGBoost, SHAP, and Optuna. Give it a CSV and a
 - [Supported task types](#supported-task-types)
 - [Harm detection](#harm-detection)
 - [Leakage detection](#leakage-detection)
+- [SHAP interaction values](#shap-interaction-values)
 - [Class imbalance warning](#class-imbalance-warning)
 - [Development](#development)
 
@@ -179,6 +180,7 @@ customer_id   0.0512           0.041                   Caution         Column na
 | `--target-corr-threshold` | No | `0.95` | Flag features whose correlation with the target exceeds this |
 | `--dominant-shap-fraction` | No | `0.7` | Flag a feature if it accounts for more than this fraction of total SHAP importance |
 | `--skip-leakage-check` | No | `False` | Disable all leakage/logical-error checks |
+| `--shap-interactions` | No | `False` | Compute pairwise SHAP interaction values (opt-in, expensive) and save them to `<output_stem>_interactions.csv` |
 | `--imbalance-threshold` | No | `0.1` | Warn if the minority class fraction (binary/multiclass) falls below this |
 | `--test-size` | No | `0.2` | Fraction of data used for validation |
 | `--random-seed` | No | `42` | Random seed for reproducibility |
@@ -223,6 +225,37 @@ Leakage warnings produce a `Caution` recommendation on their own; combined with 
 Under extreme class imbalance (e.g. a 99%/1% binary target), accuracy and even ROC-AUC can barely move regardless of which feature is shuffled — making permutation importance unreliable. Features can look unimportant simply because the metric is insensitive to what's being shuffled.
 
 TreeShaker checks the target distribution for binary and multiclass tasks (not applicable to regression) after loading data. If the minority class makes up less than `--imbalance-threshold` (default `0.1`, i.e. 10%) of the target, a plain-English warning is logged. This is visibility only — it does not block the pipeline or change the output schema. If you see this warning, consider interpreting permutation importance cautiously, or evaluating with a metric more sensitive to the minority class (e.g. PR-AUC or F1).
+
+## SHAP interaction values
+
+Plain SHAP importance ranks each feature independently. It can miss cases where two features are individually weak but jointly carry a lot of signal — a non-linear interaction.
+
+Pass `--shap-interactions` (or set `compute_shap_interactions=True` in `Config`) to additionally compute pairwise SHAP interaction values via `shap.TreeExplainer.shap_interaction_values`. This is **opt-in and off by default** because it's substantially more expensive than ordinary SHAP — roughly O(features²) per sample.
+
+When enabled:
+
+- The main `results` DataFrame returned by `pipeline.run()` is **unchanged** — same columns, same shape.
+- A second file, `<output_stem>_interactions.csv`, is written alongside the main output. For `treeshaker_results.csv` this is `treeshaker_results_interactions.csv`.
+- The interactions file has columns `feature_a`, `feature_b`, `interaction_strength`, sorted by `interaction_strength` descending, limited to the top 10 strongest pairs.
+- The same data is also available on `pipeline.interactions` after calling `run()` from the Python API.
+
+```bash
+treeshaker --input data.csv --target churn --task binary --shap-interactions
+```
+
+```python
+from treeshaker import FeatureSelectionPipeline, Config
+
+config = Config(
+    input_file="data.csv",
+    target_column="churn",
+    task="binary",
+    compute_shap_interactions=True,
+)
+pipeline = FeatureSelectionPipeline(config)
+results = pipeline.run()
+print(pipeline.interactions)
+```
 
 ## Development
 

@@ -92,6 +92,13 @@ def parse_arguments() -> argparse.Namespace:
         help="Disable leakage and logical error detection.",
     )
     parser.add_argument(
+        "--shap-interactions",
+        action="store_true",
+        help="Compute pairwise SHAP interaction values (expensive, opt-in)."
+        " Saves top interacting feature pairs to"
+        " <output_stem>_interactions.csv.",
+    )
+    parser.add_argument(
         "--imbalance-threshold",
         type=float,
         default=0.1,
@@ -158,6 +165,7 @@ def main() -> int:
             shap_importance_threshold=args.shap_threshold,
             permutation_importance_threshold=args.perm_threshold,
             leakage_config=leakage_config,
+            compute_shap_interactions=args.shap_interactions,
             imbalance_warning_threshold=args.imbalance_threshold,
             verbose=args.verbose,
         )
