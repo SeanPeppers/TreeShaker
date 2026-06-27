@@ -33,6 +33,7 @@ class HarmDetector:
         self,
         shap_importance: np.ndarray,
         perm_importance: np.ndarray,
+        severe_class_imbalance: bool = False,
     ) -> tuple[np.ndarray, list[str]]:
         """
         Determine which features are harmful based on importance scores.
@@ -42,6 +43,18 @@ class HarmDetector:
                 feature.
             perm_importance: Array of permutation importance values, one per
                 feature.
+            severe_class_imbalance: Whether the target column has severe
+                class imbalance (e.g. as detected by
+                ``utils.check_class_imbalance``). Under severe imbalance,
+                accuracy/ROC-AUC-based permutation importance collapses
+                toward zero for every feature regardless of real predictive
+                value, since shuffling barely moves an already-insensitive
+                metric. When True, a low permutation importance score alone
+                is no longer sufficient to flag a feature as harmful --
+                SHAP importance must *also* be low, since SHAP remains
+                meaningful under imbalance while permutation importance does
+                not. This has no effect when False (the default), so
+                behavior for balanced datasets is unchanged.
 
         Returns:
             A tuple of (is_harmful, harm_reasons) where:
@@ -78,14 +91,24 @@ class HarmDetector:
                 is_harmful[i] = True
                 harm_reasons.append(reason)
             elif low_perm:
-                reason = (
-                    "Shuffling this feature barely changes model performance "
-                    f"(permutation importance: {perm_importance[i]:.3f}, "
-                    f"below the {self.perm_threshold:.3f} threshold), "
-                    "meaning the model is not really using it."
-                )
-                is_harmful[i] = True
-                harm_reasons.append(reason)
+                if severe_class_imbalance:
+                    # Under severe class imbalance, permutation importance
+                    # is structurally unreliable (the metric it shuffles
+                    # barely moves for ANY feature), so a low score here
+                    # alone doesn't mean the feature is unused. SHAP
+                    # importance is not low (we already checked above), so
+                    # trust SHAP and do not flag this feature.
+                    harm_reasons.append("")
+                else:
+                    reason = (
+                        "Shuffling this feature barely changes model "
+                        "performance (permutation importance: "
+                        f"{perm_importance[i]:.3f}, below the "
+                        f"{self.perm_threshold:.3f} threshold), meaning the "
+                        "model is not really using it."
+                    )
+                    is_harmful[i] = True
+                    harm_reasons.append(reason)
             else:
                 harm_reasons.append("")
 

@@ -149,6 +149,7 @@ class FeatureSelectionPipeline:
         self.results: pd.DataFrame | None = None
         self.group_summary: pd.DataFrame | None = None
         self.interactions: pd.DataFrame | None = None
+        self.severe_class_imbalance: bool = False
         self.suggested_features: list[SyntheticFeatureSuggestion] | None = None
 
     def load_data(self) -> None:
@@ -197,6 +198,7 @@ class FeatureSelectionPipeline:
             task=self.config.task,
             imbalance_warning_threshold=self.config.imbalance_warning_threshold,
         )
+        self.severe_class_imbalance = imbalance_warning is not None
         if imbalance_warning:
             self.logger.warning(imbalance_warning)
 
@@ -508,9 +510,16 @@ class FeatureSelectionPipeline:
             shap_importance_threshold=self.config.shap_importance_threshold,
             perm_importance_threshold=self.config.permutation_importance_threshold,
         )
+        if self.severe_class_imbalance:
+            self.logger.warning(
+                "Severe class imbalance detected -- permutation importance"
+                " threshold is being skipped for harm detection; relying on"
+                " SHAP importance alone for this run."
+            )
         is_harmful, harm_reasons = detector.flag_harmful_features(
             shap_importance=shap_importance,
             perm_importance=perm_importance,
+            severe_class_imbalance=self.severe_class_imbalance,
         )
 
         # Leakage detection looks at statistical properties (e.g. target
