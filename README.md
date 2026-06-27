@@ -9,11 +9,14 @@ Automated feature selection using XGBoost, SHAP, and Optuna. Give it a CSV and a
 
 ## Why TreeShaker?
 
-- **Fast feature ranking** — SHAP + permutation importance to identify harmful features
-- **Leakage detection** — catches suspicious patterns: high target correlation, SHAP dominance, near-duplicates, multicollinearity (VIF), suspicious column names
-- **Three output formats** — CSV results, HTML reports, or Python API
-- **Automated thresholds** — sensible defaults, fully customizable
-- **Plain-English explanations** — each feature gets a Drop/Caution/Keep recommendation with reasoning
+Most feature-importance tools give you a single number per feature from a single model fit, with no way to tell whether that number is signal or noise. TreeShaker's core differentiator is **explainability you can actually trust**, backed by real mechanism rather than a one-shot importance score:
+
+- **Genuinely held-out evaluation** — every importance number (SHAP, permutation, mutual information) is computed on a `test` split the model never sees during tuning or fitting, not on data it has partially memorized. See [How it works](#how-it-works).
+- **Stability, not just a point estimate** — permutation importance is averaged over multiple independent shuffles (`--n-permutations`, reporting both mean and std), and an opt-in bootstrap ensemble (`--n-bootstrap`) refits the model on resamples to show whether a feature's rank holds up or jumps around. See [Permutation importance repeats](#permutation-importance-repeats-and-metric-override) and [Bootstrap importance stability](#bootstrap-importance-stability-opt-in).
+- **Plain-English explanations** — each feature gets a Drop/Caution/Keep recommendation with reasoning you can read and act on, not just a bare number.
+- **Cross-checked, not single-signal** — SHAP, permutation importance, mutual information, leakage statistics, and (opt-in) residual correlation are all computed independently and reconciled, so a single noisy metric can't drive a Drop decision on its own.
+- **Leakage detection** — catches suspicious patterns: high target correlation, SHAP dominance, near-duplicates, multicollinearity (VIF), suspicious column names.
+- **Three output formats** — CSV results, HTML reports, or Python API.
 
 ## Table of Contents
 
@@ -24,6 +27,7 @@ Automated feature selection using XGBoost, SHAP, and Optuna. Give it a CSV and a
 - [Output](#output)
 - [CLI reference](#cli-reference)
 - [Supported task types](#supported-task-types)
+- [Validating the reduction: full model vs. reduced model](#validating-the-reduction-full-model-vs-reduced-model)
 - [Harm detection](#harm-detection)
 - [Leakage detection](#leakage-detection)
 - [SHAP interaction values](#shap-interaction-values)
@@ -35,7 +39,7 @@ Automated feature selection using XGBoost, SHAP, and Optuna. Give it a CSV and a
 
 ## How it works
 
-TreeShaker splits your data three ways: **train**, **validation**, and **test**. `--test-size` (default `0.2`) is held out from the *full* dataset as the final test set; `--val-size` (default `0.2`) is then taken from the *remaining* train+val pool for validation. The test set is never used to fit any model — not during tuning, not in the final fit — so importance numbers reflect genuine out-of-sample behavior rather than performance on data the model has already seen.
+TreeShaker **automatically** splits your data three ways: **train**, **validation**, and **test** — you don't need to pre-split anything yourself. `--test-size` (default `0.2`) is held out from the *full* dataset as the final test set; `--val-size` (default `0.2`) is then taken from the *remaining* train+val pool for validation. The test set is never used to fit any model — not during tuning, not in the final fit — so importance numbers reflect genuine out-of-sample behavior rather than performance on data the model has already seen. This automatic, rigorous split is what makes every importance number downstream trustworthy: nothing in the ranking is computed on data the model was trained on.
 
 1. **Tune** — Optuna searches for the best XGBoost hyperparameters, training on `train` and evaluating each trial on `val` (model selection / early-stopping signal). This step is optional: pass `--skip-tuning` to skip it entirely and train directly with the default or manually-specified (`--xgboost-params`) XGBoost parameters, which is useful for quick runs
 2. **Train** — a final XGBoost model is fit on `train` + `val` combined (more data for the production-quality model), using the tuned (or directly configured) parameters. `test` is never included in this fit
@@ -168,6 +172,8 @@ feature_9     0.0011           -0.002                  0.000               Drop 
 customer_id   0.0512           0.041                   0.061               Caution         Column name 'customer_id' looks like a row identifier...
 ```
 
+TreeShaker **automatically** derives `recommendation` and `reason` for every feature from the harm-detection and leakage-detection signals below — no extra flag is needed to get plain-English explanations.
+
 `recommendation` logic:
 
 - **Drop** — harmful (low SHAP importance and/or low permutation importance)
@@ -227,6 +233,26 @@ actionable error message.
 | `multiclass` | 3+ unique values | Accuracy |
 | `regression` | Numeric | Negative MSE |
 
+Task type (`binary` / `multiclass` / `regression`) is **not** auto-detected — you must pass `--task` explicitly. Once you do, TreeShaker **automatically** selects the matching evaluation metric (ROC-AUC, accuracy, or negative MSE) for Optuna tuning, unless overridden for permutation importance via `--permutation-metric`.
+
+## Validating the reduction: full model vs. reduced model
+
+TreeShaker tells you which features to drop, but the proof that dropping them didn't hurt is something you confirm yourself by comparing two model fits. This is a **recommended manual workflow** — TreeShaker does not currently run this comparison automatically or generate this table for you.
+
+1. Run TreeShaker once on the full feature set and note the `Drop` recommendations.
+2. Train (or re-run TreeShaker with `--skip-tuning` and the same `--xgboost-params`) one model on **all** features, and a second model on only the features TreeShaker marked `Keep` (optionally `Keep` + `Caution`, depending on how conservative you want to be).
+3. Evaluate both models on the same held-out test set, using the metric that matches your task — ROC-AUC/accuracy for classification, or R² / WAPE for regression and forecasting (TreeShaker's `--permutation-metric wape` option uses the same WAPE definition, so you can reuse it here for consistency).
+4. Compare:
+
+   | Model | Features used | Metric (e.g. WAPE or R²) | Training/inference cost |
+   |---|---|---|---|
+   | Full | All N features | — | Higher |
+   | Reduced | Only `Keep` features | — | Lower |
+
+   If the reduced model's metric is at or near parity with the full model (e.g. WAPE within a small tolerance, or R² not meaningfully lower), the reduction is validated: you get a simpler, cheaper, more explainable model with no real loss of predictive performance. If the reduced model is meaningfully worse, treat that as a signal to revisit the `--shap-threshold` / `--perm-threshold` settings or move some `Caution` features back to `Keep` rather than trusting the smaller feature set blindly.
+
+This workflow is also a good place to use the [bootstrap importance stability](#bootstrap-importance-stability-opt-in) and [residual correlation diagnostics](#residual-correlation-diagnostics-opt-in) outputs as a sanity check before committing to the reduced feature set — a `Drop` recommendation backed by a stable bootstrap ranking and no contradicting residual correlation is much safer to act on than one based on a single fit.
+
 ## Harm detection
 
 A feature is flagged as harmful if **either** condition is true:
@@ -257,7 +283,7 @@ Unlike importance evaluation (SHAP, permutation importance, mutual information �
 
 Under extreme class imbalance (e.g. a 99%/1% binary target), accuracy and even ROC-AUC can barely move regardless of which feature is shuffled — making permutation importance unreliable. Features can look unimportant simply because the metric is insensitive to what's being shuffled.
 
-TreeShaker checks the target distribution for binary and multiclass tasks (not applicable to regression) after loading data. If the minority class makes up less than `--imbalance-threshold` (default `0.1`, i.e. 10%) of the target, a plain-English warning is logged. This is visibility only — it does not block the pipeline or change the output schema. If you see this warning, consider interpreting permutation importance cautiously, or evaluating with a metric more sensitive to the minority class (e.g. PR-AUC or F1).
+TreeShaker **automatically** checks the target distribution for binary and multiclass tasks (not applicable to regression) after loading data — no flag needed to enable this. If the minority class makes up less than `--imbalance-threshold` (default `0.1`, i.e. 10%) of the target, a plain-English warning is logged. This is visibility only — it does not block the pipeline or change the output schema. If you see this warning, consider interpreting permutation importance cautiously, or evaluating with a metric more sensitive to the minority class (e.g. PR-AUC or F1).
 
 ## SHAP interaction values
 
