@@ -20,7 +20,7 @@ jobs:
         uses: astral-sh/setup-uv@v3
 
       - name: Install dependencies (pinned via uv.lock)
-        run: uv sync --locked --extra dev
+        run: uv sync --locked --extra dev --extra demo --extra mcp
 
       - name: Check with ruff
         run: uv run ruff check src/ tests/ demo/
@@ -38,7 +38,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install package with dev dependencies
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[dev,demo,mcp]"
 
       - name: Run pytest
         run: pytest
