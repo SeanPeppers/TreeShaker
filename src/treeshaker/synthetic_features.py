@@ -111,6 +111,19 @@ def suggest_synthetic_features(
     for _, row in top_pairs.iterrows():
         feature_a = row["feature_a"]
         feature_b = row["feature_b"]
+
+        # A pairwise product is only meaningful for numeric features --
+        # multiplying a pandas `category` column (see dtype_handling.py,
+        # used for string features) raises, and even if it didn't, an
+        # elementwise product of category codes wouldn't be a meaningful
+        # derived feature. Skip pairs involving a non-numeric feature
+        # rather than crashing the whole suggestion step.
+        if not (
+            pd.api.types.is_numeric_dtype(data[feature_a])
+            and pd.api.types.is_numeric_dtype(data[feature_b])
+        ):
+            continue
+
         suggested_name = f"{feature_a}__x__{feature_b}"
 
         candidate = data[[target_column]].copy()

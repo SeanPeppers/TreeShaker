@@ -27,6 +27,7 @@ Most feature-importance tools give you a single number per feature from a single
 - [Output](#output)
 - [CLI reference](#cli-reference)
 - [Supported task types](#supported-task-types)
+- [Supported data types](#supported-data-types)
 - [Validating the reduction: full model vs. reduced model](#validating-the-reduction-full-model-vs-reduced-model)
 - [Harm detection](#harm-detection)
 - [Leakage detection](#leakage-detection)
@@ -240,6 +241,28 @@ actionable error message.
 | `regression` | Numeric | Negative MSE |
 
 Task type (`binary` / `multiclass` / `regression`) is **not** auto-detected — you must pass `--task` explicitly. Once you do, TreeShaker **automatically** selects the matching evaluation metric (ROC-AUC, accuracy, or negative MSE) for Optuna tuning, unless overridden for permutation importance via `--permutation-metric`.
+
+## Supported data types
+
+TreeShaker validates and normalizes feature column dtypes automatically, before anything is fit, so most real-world CSVs work without manual preprocessing. This section is an honest accounting of what's automatic, what TreeShaker rejects with a clear error, and what's still on you.
+
+| Column type | What happens | Notes |
+|---|---|---|
+| Numeric (int/float) | Works as-is. | No change — this is the baseline. |
+| Boolean | Works as-is. | Pandas already reports `bool` as numeric, so XGBoost, SHAP, correlation, VIF, and mutual information all handle it correctly with no special-casing. |
+| Low-cardinality string categorical (e.g. a handful of labels) | **Automatic.** Cast to pandas `category` dtype and fit natively by XGBoost 2.x (`enable_categorical=True`, set automatically). | No need to one-hot or label-encode yourself. |
+| High-cardinality string categorical (e.g. zip codes, user IDs with hundreds/thousands of uniques) | **Automatic**, same as above — cardinality alone doesn't change how the column is handled. | Distinguished from free text by string length, not uniqueness alone (see below). Category sets are unified across the train/val/test split internally, so a value that's split-specific doesn't crash the final combined fit. |
+| Datetime (`datetime64`, or a CSV date-string column like `"2020-01-01"`) | **Automatic.** Auto-derives `{col}_year`, `{col}_month`, `{col}_day`, `{col}_dayofweek` numeric columns and removes the raw column from the feature set. | No lag/rolling/cyclical feature engineering is attempted — only these four calendar fields. Build any time-series features (lags, rolling windows, cyclical encodings) yourself before passing the data in. |
+| Free text (long, mostly-unique strings — e.g. reviews, comments, descriptions) | **Raises a clear `ValidationError`.** Not silently treated as categorical. | Pre-vectorize or embed the column (e.g. TF-IDF, sentence embeddings) into numeric columns before passing it to TreeShaker. TreeShaker does not attempt any text feature engineering itself. |
+| Missing values (NaN) | Works as-is, in every code path. | XGBoost natively learns a default split direction for missing numeric values. Leakage/VIF/correlation checks use pandas' NaN-safe `.corr()`. Mutual information (which has no native NaN support in scikit-learn) is median-imputed internally for that one calculation only — this does not affect the model fit or any other check. |
+
+**How categorical vs. free text is decided:** a string column is treated as free text (and rejected) only if its values are both *mostly unique* (≥50% unique) **and** *long on average* (≥20 characters). A high-cardinality but short-valued column (a 5-character zip code, a UUID) does not trip this and is treated as ordinary categorical data. If a column you know isn't free text gets flagged, pre-encode it into a numeric or shorter categorical form before passing it in.
+
+**Not yet handled / explicitly out of scope:**
+- Cyclical/seasonal encodings of datetime fields (e.g. sine/cosine of month) — only the four raw calendar fields are derived.
+- Lag, rolling-window, or other time-series feature engineering — build these yourself; TreeShaker's [temporal feature exemption](#temporal-feature-exemption) only validates them once you have.
+- List/array-valued or nested (JSON-in-a-cell) columns — not detected or supported; these will likely hit a confusing error from `pd.read_csv` or XGBoost before TreeShaker's own validation runs.
+- Multi-label or hierarchical categorical encodings — only flat single-value categorical columns are supported.
 
 ## Validating the reduction: full model vs. reduced model
 
