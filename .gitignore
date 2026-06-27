@@ -137,3 +137,6 @@ dmypy.json
 /paper/
 marketing.md
 /CLAUDE.md
+
+# graphify knowledge-graph output (local index, regenerable, huge)
+/graphify-out/
