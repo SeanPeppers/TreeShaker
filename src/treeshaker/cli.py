@@ -203,6 +203,17 @@ def parse_arguments() -> argparse.Namespace:
         " roc_auc for binary, accuracy for multiclass, neg_mse for"
         " regression.",
     )
+    parser.add_argument(
+        "--shap-sample-size",
+        type=int,
+        default=None,
+        help="If set and smaller than the dataset's row count, randomly"
+        " sample this many rows (using --random-seed) for SHAP importance"
+        " computation instead of using the full dataset. Useful for"
+        " speeding up SHAP on large datasets; importance is still reported"
+        " over the full feature set. Unset (default) uses all rows,"
+        " matching prior behavior.",
+    )
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging.")
     return parser.parse_args()
 
@@ -274,6 +285,7 @@ def main() -> int:
             ),
             n_permutations=args.n_permutations,
             permutation_metric=args.permutation_metric,
+            shap_sample_size=args.shap_sample_size,
         )
     except ConfigError as exc:
         logger.error(f"Configuration error: {exc}")

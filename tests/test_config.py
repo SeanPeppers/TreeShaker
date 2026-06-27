@@ -92,11 +92,29 @@ def test_config_defaults():
     assert cfg.permutation_importance_threshold == 0.05
     assert cfg.n_permutations == 5
     assert cfg.permutation_metric is None
+    assert cfg.shap_sample_size is None
 
 
 def test_config_invalid_n_permutations_raises():
     with pytest.raises(ConfigError, match="n_permutations"):
         Config(input_file="f.csv", target_column="y", task="binary", n_permutations=0)
+
+
+def test_config_shap_sample_size_default_none():
+    cfg = Config(input_file="f.csv", target_column="y", task="binary")
+    assert cfg.shap_sample_size is None
+
+
+def test_config_shap_sample_size_accepts_positive_int():
+    cfg = Config(
+        input_file="f.csv", target_column="y", task="binary", shap_sample_size=500
+    )
+    assert cfg.shap_sample_size == 500
+
+
+def test_config_invalid_shap_sample_size_raises():
+    with pytest.raises(ConfigError, match="shap_sample_size"):
+        Config(input_file="f.csv", target_column="y", task="binary", shap_sample_size=0)
 
 
 def test_config_valid_permutation_metric_accepted():

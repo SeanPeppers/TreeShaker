@@ -212,6 +212,7 @@ TreeShaker **automatically** derives `recommendation` and `reason` for every fea
 | `--residual-corr-threshold` | No | `0.3` | Flag a feature whose \|correlation with residuals\| exceeds this. Only used when `--check-residuals` is set |
 | `--test-size` | No | `0.2` | Fraction of the *full* dataset held out as the final test set. Never used to fit any model; used for importance evaluation and leakage statistics |
 | `--val-size` | No | `0.2` | Fraction of the *remaining* train+val pool (after `--test-size` is removed) used for validation during Optuna tuning |
+| `--shap-sample-size` | No | unset (use all rows) | If set and smaller than the dataset's row count, randomly sample this many rows (using `--random-seed`) for SHAP importance computation instead of the full dataset |
 | `--random-seed` | No | `42` | Random seed for reproducibility |
 | `--verbose` | No | `False` | Enable debug logging |
 
@@ -323,6 +324,27 @@ config = Config(
 pipeline = FeatureSelectionPipeline(config)
 results = pipeline.run()
 print(pipeline.interactions)
+```
+
+## Speeding up SHAP on large datasets
+
+TreeShaker already uses `shap.TreeExplainer`, the fast, exact explainer for tree-based models (as opposed to the much slower, model-agnostic `KernelExplainer`). On very large datasets, even `TreeExplainer` can be slow simply because of how many rows it has to run.
+
+Set `--shap-sample-size` (or `shap_sample_size` in `Config`) to cap the number of rows used for SHAP importance computation. When set and smaller than the available row count, TreeShaker randomly samples that many rows (using `--random-seed`/`random_seed` for reproducibility) before computing SHAP values. Importance is still reported over the **full feature set** — only the row count used to estimate it is reduced. This is **off by default** (`None`, use all rows) and does not change existing behavior unless explicitly set.
+
+```bash
+treeshaker --input large_data.csv --target churn --task binary --shap-sample-size 5000
+```
+
+```python
+from treeshaker import Config
+
+config = Config(
+    input_file="large_data.csv",
+    target_column="churn",
+    task="binary",
+    shap_sample_size=5000,
+)
 ```
 
 ## Permutation importance repeats and metric override

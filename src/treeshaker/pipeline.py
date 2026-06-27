@@ -357,6 +357,8 @@ class FeatureSelectionPipeline:
                 model=bootstrap_model,
                 data=self.test_data,
                 feature_names=self.feature_names,
+                sample_size=self.config.shap_sample_size,
+                random_seed=self.config.random_seed,
             )
             self.logger.info(
                 f"Bootstrap importance iteration {i + 1}/{bootstrap_cfg.n_bootstrap}"
@@ -430,6 +432,8 @@ class FeatureSelectionPipeline:
             model=self.model,
             data=self.test_data,
             feature_names=self.feature_names,
+            sample_size=self.config.shap_sample_size,
+            random_seed=self.config.random_seed,
         )
 
         perm_importance, perm_importance_std = compute_permutation_importance(
