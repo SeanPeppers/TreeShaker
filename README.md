@@ -1,6 +1,32 @@
 # TreeShaker
 
+[![Lint](https://github.com/SeanPeppers/TreeShaker/actions/workflows/lint.yml/badge.svg)](https://github.com/SeanPeppers/TreeShaker/actions/workflows/lint.yml)
+![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)
+![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)
+![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)
+
 Automated feature selection using XGBoost, SHAP, and Optuna. Give it a CSV and a target column — it tunes a model, ranks every feature by importance, and flags the ones that are hurting you.
+
+## Why TreeShaker?
+
+- **Fast feature ranking** — SHAP + permutation importance to identify harmful features
+- **Leakage detection** — catches suspicious patterns: high target correlation, SHAP dominance, near-duplicates, suspicious column names
+- **Three output formats** — CSV results, HTML reports, or Python API
+- **Automated thresholds** — sensible defaults, fully customizable
+- **Plain-English explanations** — each feature gets a Drop/Caution/Keep recommendation with reasoning
+
+## Table of Contents
+
+- [Installation](#installation)
+- [Quick start](#quick-start)
+  - [CLI](#cli)
+  - [Python API](#python-api)
+- [Output](#output)
+- [CLI reference](#cli-reference)
+- [Supported task types](#supported-task-types)
+- [Harm detection](#harm-detection)
+- [Leakage detection](#leakage-detection)
+- [Development](#development)
 
 ## How it works
 
@@ -10,17 +36,21 @@ Automated feature selection using XGBoost, SHAP, and Optuna. Give it a CSV and a
 4. **Flag** — features are marked harmful if their SHAP importance is near zero *or* if shuffling them doesn't degrade the model (i.e., they carry no signal)
 5. **Output** — results saved as a ranked CSV or HTML report
 
----
-
 ## Installation
-
-```bash
-pip install -e ".[dev]"
-```
 
 Requires Python 3.13+.
 
----
+```bash
+pip install treeshaker
+```
+
+For development:
+
+```bash
+git clone https://github.com/SeanPeppers/TreeShaker.git
+cd TreeShaker
+pip install -e ".[dev]"
+```
 
 ## Quick start
 
@@ -100,8 +130,6 @@ results = pipeline.run()
 print(results[results["recommendation"] == "Drop"])
 ```
 
----
-
 ## Output
 
 Results are sorted by SHAP importance (descending).
@@ -132,8 +160,6 @@ customer_id   0.0512           0.041                   Caution         Column na
 - **Caution** — leakage/logical warning only, model is still using the feature
 - **Keep** — no issues found
 - If both harmful *and* a leakage warning fire, the feature is still `Drop`, with both reasons combined.
-
----
 
 ## CLI reference
 
@@ -166,8 +192,6 @@ customer_id   0.0512           0.041                   Caution         Column na
 | `multiclass` | 3+ unique values | Accuracy |
 | `regression` | Numeric | Negative MSE |
 
----
-
 ## Harm detection
 
 A feature is flagged as harmful if **either** condition is true:
@@ -176,8 +200,6 @@ A feature is flagged as harmful if **either** condition is true:
 - **Low permutation importance** — permutation importance < `--perm-threshold` (default `0.05`). Shuffling the feature doesn't hurt performance, meaning the model isn't using it.
 
 Both thresholds are configurable. Raise them to be more aggressive about flagging features; lower them to only flag the most clearly useless ones.
-
----
 
 ## Leakage detection
 
@@ -192,8 +214,6 @@ Five independent checks flag features that may be causing data leakage or are ot
 | Suspicious names | Matches patterns like `_id`, `future_`, `label`, `target` | Likely an identifier or future-leaking column |
 
 Leakage warnings produce a `Caution` recommendation on their own; combined with harm detection they escalate to `Drop`. Disable all five checks with `--skip-leakage-check`.
-
----
 
 ## Development
 
