@@ -31,6 +31,7 @@ Automated feature selection using XGBoost, SHAP, and Optuna. Give it a CSV and a
 - [Bootstrap importance stability (opt-in)](#bootstrap-importance-stability-opt-in)
 - [Residual correlation diagnostics (opt-in)](#residual-correlation-diagnostics-opt-in)
 - [Feature-group importance](#feature-group-importance)
+- [Try it interactively](#try-it-interactively)
 - [Development](#development)
 
 ## How it works
@@ -408,6 +409,28 @@ When grouping is active (either way), the per-feature `results` DataFrame return
 
 Importance is **summed**, not averaged, per group — the sum reads as "total model attention this group accounts for," which is the more interpretable number when deciding whether to drop an entire group.
 
+## Try it interactively
+
+A minimal [Gradio](https://www.gradio.app/) sandbox lets you try TreeShaker on
+your own CSV without writing any code: upload a file, pick a target column
+and task type, and click Run to see the recommendation table.
+
+**Locally:**
+
+```bash
+pip install -e ".[demo]"
+python demo/app.py
+```
+
+Then open the printed local URL (default `http://127.0.0.1:7860`) in your browser.
+
+**In GitHub Codespaces:**
+
+Open this repo in a Codespace ("Code" → "Codespaces" → "Create codespace on
+main"). The dev container installs the `demo` extra automatically and
+forwards port `7860` — once it's ready, run `python demo/app.py` in the
+terminal and use the forwarded-port popup to open the UI.
+
 ## Development
 
 ```bash
@@ -415,10 +438,10 @@ Importance is **summed**, not averaged, per group — the sum reads as "total mo
 pip install -e ".[dev]"
 
 # Lint
-ruff check src/ tests/
+ruff check src/ tests/ demo/
 
 # Format
-ruff format src/ tests/
+ruff format src/ tests/ demo/
 
 # Run tests
 pytest
