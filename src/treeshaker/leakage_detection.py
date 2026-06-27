@@ -1,6 +1,7 @@
 """Data leakage and logical error detection for feature columns."""
 
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
@@ -31,6 +32,21 @@ class LeakageConfig:
             well-predicted by a linear combination of the other features,
             indicating multicollinearity that pairwise correlation alone
             can miss. Default 10.0.
+        temporal_feature_patterns: Substrings (case-insensitive) that
+            identify time-series engineered features such as lags,
+            rolling/expanding windows, exponentially-weighted moving
+            averages, shifts, and diffs. These features are *expected*
+            to correlate highly with the target, so when a feature name
+            matches one of these patterns it is exempted from the target
+            correlation check (see `exempt_temporal_features`) and is
+            instead checked for structural consistency (leading-NaN count
+            matching the parsed lag/window offset). Default covers
+            `lag_`, `rolling_`, `ewm_`, `shift_`, `diff_`, `expanding_`.
+        exempt_temporal_features: When True (default), features whose name
+            matches `temporal_feature_patterns` are exempted from the
+            high-target-correlation leakage check. Set to False to
+            disable the exemption and treat temporal features like any
+            other column.
     """
 
     target_corr_threshold: float = 0.95
@@ -38,6 +54,17 @@ class LeakageConfig:
     near_constant_threshold: float = 0.99
     near_duplicate_corr_threshold: float = 0.98
     vif_threshold: float = 10.0
+    temporal_feature_patterns: tuple[str, ...] = field(
+        default_factory=lambda: (
+            "lag_",
+            "rolling_",
+            "ewm_",
+            "shift_",
+            "diff_",
+            "expanding_",
+        )
+    )
+    exempt_temporal_features: bool = True
 
 
 # Column name patterns that suggest identifiers or future-leaking columns.
@@ -55,6 +82,12 @@ _SUSPICIOUS_NAME_PATTERNS = (
 )
 
 _EXACT_ID_NAMES = {"id", "index", "row_id", "record_id", "pk", "uuid"}
+
+# Matches a trailing integer offset after a temporal pattern, e.g.
+# "lag_7", "rolling_mean_30" (offset is the *first* trailing integer
+# group, e.g. "30"), "shift_1". Used to estimate the expected number of
+# leading NaNs for structural validation.
+_TRAILING_INT_PATTERN = re.compile(r"(\d+)")
 
 
 class LeakageDetector:
@@ -79,6 +112,16 @@ class LeakageDetector:
       identifiers or future-leaking columns are flagged as a soft warning.
 
     Each check is independent. A feature can trigger multiple warnings.
+
+    Features whose name matches a temporal pattern (`lag_`, `rolling_`,
+    `ewm_`, `shift_`, `diff_`, `expanding_` by default — see
+    `LeakageConfig.temporal_feature_patterns`) are exempted from the
+    target correlation check, since lag/rolling/etc. features are
+    *expected* to correlate highly with the target. Use
+    `detect_temporal_structure` to instead check those features for
+    structural consistency (leading-NaN count matching the parsed
+    offset, no unexpected mid-series NaN gaps). This is a separate
+    warning category from leakage, surfaced independently by callers.
 
     Args:
         config: A LeakageConfig instance with detection thresholds.
@@ -107,6 +150,14 @@ class LeakageDetector:
         Returns:
             A dict mapping each feature name to a list of warning strings.
             Features with no issues map to an empty list.
+
+        Note:
+            Features whose name matches a temporal pattern (see
+            `LeakageConfig.temporal_feature_patterns`) are exempt from the
+            target-correlation check by default, since lags/rolling
+            windows/etc. are *expected* to correlate highly with the
+            target. Use `detect_temporal_structure` separately to check
+            those features for structural consistency instead.
         """
         warnings: dict[str, list[str]] = {name: [] for name in feature_names}
 
@@ -118,6 +169,100 @@ class LeakageDetector:
         self._check_suspicious_names(feature_names, target_column, warnings)
 
         return warnings
+
+    def detect_temporal_structure(
+        self,
+        df: pd.DataFrame,
+        feature_names: list[str],
+    ) -> dict[str, list[str]]:
+        """
+        Check time-series engineered features for structural consistency.
+
+        Features whose name matches a temporal pattern (lag/rolling/ewm/
+        shift/diff/expanding) are exempt from the high-target-correlation
+        leakage check, since that correlation is expected. Instead, this
+        checks that the leading-NaN count matches the lag/window offset
+        parsed from the feature name, and that there are no unexpected
+        NaN gaps mid-series — both of which can indicate an off-by-one or
+        windowing bug that leaks future information.
+
+        These are returned as a separate category from `detect`'s leakage
+        warnings: a temporal structure issue is a correctness bug in how
+        the feature was engineered, not evidence the feature was derived
+        from the target.
+
+        Args:
+            df: The full dataset (does not need the target column).
+            feature_names: Ordered list of feature column names.
+
+        Returns:
+            A dict mapping each feature name to a list of structural
+            warning strings. Features with no issues, or that are not
+            temporal features, map to an empty list. Empty if
+            `LeakageConfig.exempt_temporal_features` is False.
+        """
+        warnings: dict[str, list[str]] = {name: [] for name in feature_names}
+        if not self.config.exempt_temporal_features:
+            return warnings
+
+        for name in feature_names:
+            if not self._is_temporal_feature(name):
+                continue
+            col = df[name]
+            offset = self._parse_temporal_offset(name)
+
+            is_na = col.isna().to_numpy()
+            n = len(is_na)
+            leading_nan_count = int(np.argmax(~is_na)) if not is_na.all() else n
+
+            if offset is not None and leading_nan_count != offset:
+                warnings[name].append(
+                    f"Temporal structure warning: '{name}' has"
+                    f" {leading_nan_count} leading NaN(s), but its name"
+                    f" implies an offset/window of {offset}. A mismatch"
+                    f" can indicate an off-by-one or windowing bug that"
+                    f" leaks future information into earlier rows."
+                )
+
+            if leading_nan_count < n:
+                trailing = is_na[leading_nan_count:]
+                if trailing.any():
+                    gap_count = int(trailing.sum())
+                    warnings[name].append(
+                        f"Temporal structure warning: '{name}' has"
+                        f" {gap_count} unexpected NaN(s) after the initial"
+                        f" leading-NaN run, which is unusual for a"
+                        f" lag/rolling/window feature and worth"
+                        f" investigating."
+                    )
+
+        return warnings
+
+    def _is_temporal_feature(self, name: str) -> bool:
+        """Check whether a feature name matches a configured temporal pattern."""
+        lower = name.lower()
+        return any(
+            pattern.lower() in lower
+            for pattern in self.config.temporal_feature_patterns
+        )
+
+    @staticmethod
+    def _parse_temporal_offset(name: str) -> int | None:
+        """Parse the lag/window offset from a temporal feature name.
+
+        Looks for the last integer group in the name (e.g. "rolling_mean_30"
+        -> 30, "lag_7" -> 7). For decimal parameters like "ewm_alpha_0.3"
+        the fractional part is not an offset, so no integer count can be
+        meaningfully derived and None is returned for that case via the
+        decimal point check.
+        """
+        if "." in name:
+            # e.g. ewm_alpha_0.3 -- not a leading-NaN-count style parameter.
+            return None
+        matches = _TRAILING_INT_PATTERN.findall(name)
+        if not matches:
+            return None
+        return int(matches[-1])
 
     def _check_target_correlation(
         self,
@@ -132,6 +277,8 @@ class LeakageDetector:
             return
 
         for name in feature_names:
+            if self.config.exempt_temporal_features and self._is_temporal_feature(name):
+                continue
             col = df[name]
             if not pd.api.types.is_numeric_dtype(col):
                 continue
