@@ -49,12 +49,34 @@ def compute_shap_importance(
     return mean_abs
 
 
+def _get_predictions(
+    model: Any, X: pd.DataFrame, use_predict_proba: bool
+) -> np.ndarray:
+    """Generate predictions using either predict_proba or predict.
+
+    Args:
+        model: A fitted XGBoost model (XGBClassifier or XGBRegressor).
+        X: Feature DataFrame to predict on.
+        use_predict_proba: If True, calls model.predict_proba(X) and returns
+            the positive-class probability (column 1). Otherwise calls
+            model.predict(X) for hard labels (classification) or raw
+            predictions (regression).
+
+    Returns:
+        Array of predictions/probabilities of shape (n_samples,).
+    """
+    if use_predict_proba:
+        return np.asarray(model.predict_proba(X))[:, 1]
+    return np.asarray(model.predict(X))
+
+
 def compute_permutation_importance(
     model: Any,
     data: pd.DataFrame,
     target_column: str,
     feature_names: list[str],
     metric_fn: Callable[[np.ndarray, np.ndarray], float],
+    use_predict_proba: bool = False,
 ) -> np.ndarray:
     """
     Compute permutation importance for each feature.
@@ -69,6 +91,11 @@ def compute_permutation_importance(
         feature_names: Ordered list of feature column names.
         metric_fn: Callable with signature (y_true, y_pred) -> float,
             where higher values indicate better performance.
+        use_predict_proba: If True, predictions are generated via
+            model.predict_proba(X)[:, 1] (positive-class probability)
+            instead of model.predict(X). This is required for metrics
+            such as roc_auc_score that expect scores/probabilities
+            rather than hard class labels. Defaults to False.
 
     Returns:
         Array of shape (n_features,) with permutation importance per feature.
@@ -78,7 +105,7 @@ def compute_permutation_importance(
     X = data[feature_names].copy()
     y = np.asarray(data[target_column].values)
 
-    baseline_preds = model.predict(X)
+    baseline_preds = _get_predictions(model, X, use_predict_proba)
     baseline_score = metric_fn(y, baseline_preds)
 
     importances = np.zeros(len(feature_names))
@@ -88,7 +115,7 @@ def compute_permutation_importance(
         # reproducible while still shuffling each column differently.
         rng = np.random.default_rng(seed=42 + i)
         X_shuffled[feature] = rng.permutation(np.asarray(X_shuffled[feature].values))
-        shuffled_preds = model.predict(X_shuffled)
+        shuffled_preds = _get_predictions(model, X_shuffled, use_predict_proba)
         shuffled_score = metric_fn(y, shuffled_preds)
         importances[i] = baseline_score - shuffled_score
 

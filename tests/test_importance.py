@@ -1,9 +1,11 @@
 """Tests for SHAP and permutation importance functions."""
 
+import numpy as np
 import pandas as pd
 import pytest
 import xgboost as xgb
 from sklearn.datasets import make_classification, make_regression
+from sklearn.metrics import roc_auc_score
 
 from treeshaker.importance import (
     compute_permutation_importance,
@@ -62,6 +64,44 @@ def test_shap_importance_regression(fitted_regression_model):
 def test_permutation_importance_shape(fitted_binary_model):
     model, df, feature_names = fitted_binary_model
     metric_fn = get_metric_fn("binary")
+    importance = compute_permutation_importance(
+        model, df, "target", feature_names, metric_fn, use_predict_proba=True
+    )
+    assert importance.shape == (8,)
+
+
+def test_permutation_importance_binary_uses_predict_proba(fitted_binary_model):
+    """Binary permutation importance must score against predicted
+    probabilities, not hard class labels, since roc_auc_score expects
+    a ranking score rather than discrete labels."""
+    model, df, feature_names = fitted_binary_model
+    metric_fn = get_metric_fn("binary")
+    X = df[feature_names]
+    y = np.asarray(df["target"].values)
+
+    proba_importance = compute_permutation_importance(
+        model, df, "target", feature_names, metric_fn, use_predict_proba=True
+    )
+    label_importance = compute_permutation_importance(
+        model, df, "target", feature_names, metric_fn, use_predict_proba=False
+    )
+
+    # The two approaches should generally produce different importance
+    # values, since roc_auc_score behaves very differently on hard labels
+    # vs. continuous probabilities.
+    assert not np.allclose(proba_importance, label_importance)
+
+    # Sanity check: the baseline AUC computed with probabilities should
+    # match calling predict_proba directly.
+    expected_baseline_auc = roc_auc_score(y, model.predict_proba(X)[:, 1])
+    assert expected_baseline_auc >= 0.0
+
+
+def test_permutation_importance_default_is_predict(fitted_regression_model):
+    """use_predict_proba should default to False, preserving prior
+    behavior for regression (and multiclass) tasks."""
+    model, df, feature_names = fitted_regression_model
+    metric_fn = get_metric_fn("regression")
     importance = compute_permutation_importance(
         model, df, "target", feature_names, metric_fn
     )

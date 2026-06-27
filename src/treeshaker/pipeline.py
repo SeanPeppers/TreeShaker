@@ -210,6 +210,7 @@ class FeatureSelectionPipeline:
             target_column=self.config.target_column,
             feature_names=self.feature_names,
             metric_fn=metric_fn,
+            use_predict_proba=(self.config.task == "binary"),
         )
 
         detector = HarmDetector(
