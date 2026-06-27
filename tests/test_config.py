@@ -44,6 +44,33 @@ def test_config_invalid_test_size_raises():
         Config(input_file="f.csv", target_column="y", task="binary", test_size=1.5)
 
 
+def test_config_invalid_val_size_raises():
+    with pytest.raises(ConfigError, match="val_size"):
+        Config(input_file="f.csv", target_column="y", task="binary", val_size=1.5)
+
+
+def test_config_test_plus_val_size_too_large_raises():
+    with pytest.raises(ConfigError, match="test_size \\+ val_size"):
+        Config(
+            input_file="f.csv",
+            target_column="y",
+            task="binary",
+            test_size=0.6,
+            val_size=0.5,
+        )
+
+
+def test_config_test_plus_val_size_exactly_one_raises():
+    with pytest.raises(ConfigError, match="test_size \\+ val_size"):
+        Config(
+            input_file="f.csv",
+            target_column="y",
+            task="binary",
+            test_size=0.5,
+            val_size=0.5,
+        )
+
+
 def test_config_invalid_format_raises():
     with pytest.raises(ConfigError, match="output_format"):
         Config(
@@ -59,6 +86,7 @@ def test_config_defaults():
     assert cfg.output_file == "treeshaker_results.csv"
     assert cfg.output_format == "csv"
     assert cfg.test_size == 0.2
+    assert cfg.val_size == 0.2
     assert cfg.random_seed == 42
     assert cfg.shap_importance_threshold == 0.01
     assert cfg.permutation_importance_threshold == 0.05

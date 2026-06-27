@@ -46,6 +46,7 @@ def test_parse_arguments_defaults():
     assert args.shap_threshold == 0.01
     assert args.perm_threshold == 0.05
     assert args.test_size == 0.2
+    assert args.val_size == 0.2
     assert args.random_seed == 42
     assert not args.verbose
 

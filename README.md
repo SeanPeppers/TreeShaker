@@ -34,11 +34,15 @@ Automated feature selection using XGBoost, SHAP, and Optuna. Give it a CSV and a
 
 ## How it works
 
-1. **Tune** — Optuna searches for the best XGBoost hyperparameters on a train/validation split. This step is optional: pass `--skip-tuning` to skip it entirely and train directly with the default or manually-specified (`--xgboost-params`) XGBoost parameters, which is useful for quick runs
-2. **Train** — a final XGBoost model is fit on the tuned (or directly configured) parameters
-3. **Rank** — SHAP values and permutation importance are computed for every feature
+TreeShaker splits your data three ways: **train**, **validation**, and **test**. `--test-size` (default `0.2`) is held out from the *full* dataset as the final test set; `--val-size` (default `0.2`) is then taken from the *remaining* train+val pool for validation. The test set is never used to fit any model — not during tuning, not in the final fit — so importance numbers reflect genuine out-of-sample behavior rather than performance on data the model has already seen.
+
+1. **Tune** — Optuna searches for the best XGBoost hyperparameters, training on `train` and evaluating each trial on `val` (model selection / early-stopping signal). This step is optional: pass `--skip-tuning` to skip it entirely and train directly with the default or manually-specified (`--xgboost-params`) XGBoost parameters, which is useful for quick runs
+2. **Train** — a final XGBoost model is fit on `train` + `val` combined (more data for the production-quality model), using the tuned (or directly configured) parameters. `test` is never included in this fit
+3. **Rank** — SHAP values, permutation importance, and mutual information are computed for every feature, evaluated against the held-out `test` set
 4. **Flag** — features are marked harmful if their SHAP importance is near zero *or* if shuffling them doesn't degrade the model (i.e., they carry no signal)
 5. **Output** — results saved as a ranked CSV or HTML report
+
+> **Behavior change for existing users:** previously TreeShaker used only a train/validation split, and the final model's importance/SHAP/permutation/mutual-information scores were computed on `val_data` — the *same* validation data already included in the final model's training fit. That meant importance was measured on data the model had partially memorized, not genuinely held out, which could inflate importance scores (especially permutation importance and mutual information). The 3-way split fixes this: importance is now computed on a `test` set that is never fit on by any model. If you were relying on `--test-size` to mean "validation fraction," note its meaning has changed to "held-out final test fraction" — use the new `--val-size` flag to control the validation fraction taken from the remaining train+val pool. Expect your numeric importance values to change after upgrading, even with the same `--test-size`.
 
 ## Installation
 
@@ -141,7 +145,7 @@ Results are sorted by SHAP importance (descending).
 | Column | Type | Description |
 |---|---|---|
 | `feature_name` | str | Feature column name |
-| `shap_importance` | float | Mean absolute SHAP value across validation samples |
+| `shap_importance` | float | Mean absolute SHAP value across held-out test samples |
 | `permutation_importance` | float | Performance drop when the feature is shuffled |
 | `mutual_info_score` | float | Model-agnostic mutual information between the feature and the target (cross-check on SHAP/permutation) |
 | `recommendation` | str | `Drop`, `Caution`, or `Keep` |
@@ -192,7 +196,8 @@ customer_id   0.0512           0.041                   0.061               Cauti
 | `--imbalance-threshold` | No | `0.1` | Warn if the minority class fraction (binary/multiclass) falls below this |
 | `--n-bootstrap` | No | `0` | Number of bootstrap resamples to refit and assess SHAP importance ranking stability. `0` disables this feature |
 | `--bootstrap-sample-frac` | No | `1.0` | Fraction of combined train+val rows sampled (with replacement) per bootstrap iteration |
-| `--test-size` | No | `0.2` | Fraction of data used for validation |
+| `--test-size` | No | `0.2` | Fraction of the *full* dataset held out as the final test set. Never used to fit any model; used for importance evaluation and leakage statistics |
+| `--val-size` | No | `0.2` | Fraction of the *remaining* train+val pool (after `--test-size` is removed) used for validation during Optuna tuning |
 | `--random-seed` | No | `42` | Random seed for reproducibility |
 | `--verbose` | No | `False` | Enable debug logging |
 
@@ -203,8 +208,9 @@ customer_id   0.0512           0.041                   0.061               Cauti
 TreeShaker validates common input mistakes up front and reports them in
 plain English instead of a raw traceback — for example, a missing input
 file, an empty or malformed CSV, a target column with no non-null values,
-or a `--test-size` too small to stratify the validation split. All of
-these exit with code `1` and a one-line, actionable error message.
+or a `--test-size`/`--val-size` too small to stratify the test or
+validation split. All of these exit with code `1` and a one-line,
+actionable error message.
 
 ## Supported task types
 
@@ -237,6 +243,8 @@ Six independent checks flag features that may be causing data leakage or are oth
 | Suspicious names | Matches patterns like `_id`, `future_`, `label`, `target` | Likely an identifier or future-leaking column |
 
 Leakage warnings produce a `Caution` recommendation on their own; combined with harm detection they escalate to `Drop`. Disable all six checks with `--skip-leakage-check`.
+
+Unlike importance evaluation (SHAP, permutation importance, mutual information — all computed on the held-out `test` set, see [How it works](#how-it-works)), leakage detection is a statistical property check across the *entire* dataset, not a held-out-generalization concern. So these checks intentionally run against `train` + `val` + `test` combined, to see the full dataset's correlation/VIF/duplicate statistics.
 
 ## Class imbalance warning
 
@@ -279,7 +287,7 @@ print(pipeline.interactions)
 
 TreeShaker normally fits a single final XGBoost model and reports its SHAP and permutation importance. A single fit's importance ranking can be noisy, especially on smaller datasets — a feature ranked 3rd might just as easily rank 6th on a slightly different sample.
 
-Set `--n-bootstrap` to a positive integer to additionally refit the model `n` times on bootstrap resamples (sampled with replacement from the combined train+validation data) using the **same** tuned hyperparameters Optuna already found — Optuna is not re-run per iteration, since that would be far too expensive for what this feature is checking. Each bootstrap refit recomputes SHAP importance only; permutation importance is skipped per iteration since it requires a full extra prediction pass per feature, which would make the cost scale with both `n_bootstrap` and feature count. SHAP alone is enough to assess ranking stability.
+Set `--n-bootstrap` to a positive integer to additionally refit the model `n` times on bootstrap resamples (sampled with replacement from the combined train+validation data) using the **same** tuned hyperparameters Optuna already found — Optuna is not re-run per iteration, since that would be far too expensive for what this feature is checking. Each bootstrap refit recomputes SHAP importance only, evaluated on the held-out `test` set; permutation importance is skipped per iteration since it requires a full extra prediction pass per feature, which would make the cost scale with both `n_bootstrap` and feature count. SHAP alone is enough to assess ranking stability.
 
 ```bash
 treeshaker --input data.csv --target churn --task binary --n-bootstrap 30

@@ -45,6 +45,33 @@ def test_pipeline_regression_run(regression_csv, tmp_path):
     assert results["shap_importance"].is_monotonic_decreasing
 
 
+def test_pipeline_load_data_populates_disjoint_test_data(binary_csv, tmp_path):
+    """load_data() must populate test_data, disjoint from train_data/val_data."""
+    config = make_fast_config(binary_csv, "binary", tmp_path)
+    pipeline = FeatureSelectionPipeline(config)
+    pipeline.load_data()
+
+    assert pipeline.train_data is not None
+    assert pipeline.val_data is not None
+    assert pipeline.test_data is not None
+
+    # Rows are anonymous (no id column), so use a positional fingerprint via
+    # the index reset behavior: verify disjointness by row-content tuples,
+    # which is robust since make_classification rows are float-unique here.
+    train_rows = {tuple(row) for row in pipeline.train_data.itertuples(index=False)}
+    val_rows = {tuple(row) for row in pipeline.val_data.itertuples(index=False)}
+    test_rows = {tuple(row) for row in pipeline.test_data.itertuples(index=False)}
+
+    assert train_rows.isdisjoint(val_rows)
+    assert train_rows.isdisjoint(test_rows)
+    assert val_rows.isdisjoint(test_rows)
+
+    total_rows = (
+        len(pipeline.train_data) + len(pipeline.val_data) + len(pipeline.test_data)
+    )
+    assert total_rows == 200  # binary_data fixture has 200 rows
+
+
 def test_pipeline_recommendation_values(binary_csv, tmp_path):
     config = make_fast_config(binary_csv, "binary", tmp_path)
     results = FeatureSelectionPipeline(config).run()

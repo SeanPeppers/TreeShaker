@@ -95,19 +95,31 @@ def load_csv(
     target_column: str,
     task: str,
     test_size: float = 0.2,
+    val_size: float = 0.2,
     random_seed: int = 42,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Load a CSV file and split it into train and validation sets.
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Load a CSV file and split it into train, validation, and test sets.
+
+    The split is done in two sequential steps (the standard sklearn pattern
+    for a 3-way split): first test_size is held out from the full dataset as
+    the final, never-fit-on test set; then val_size (a fraction of the
+    *remaining* train+val pool) is held out from what's left as the
+    validation set used for Optuna trial evaluation / early stopping.
 
     Args:
         filepath: Path to the input CSV file.
         target_column: Name of the target column.
         task: One of "binary", "multiclass", or "regression".
-        test_size: Fraction of data to use for validation.
+        test_size: Fraction of the FULL dataset held out as the final test
+            set. This set is never used for fitting any model.
+        val_size: Fraction of the remaining train+val pool (i.e. after
+            test_size is removed) used for validation during hyperparameter
+            tuning.
         random_seed: Random seed for reproducible splits.
 
     Returns:
-        A tuple of (train_df, val_df), both including the target column.
+        A tuple of (train_df, val_df, test_df), all including the target
+        column.
 
     Raises:
         ValidationError: If the input file is missing, empty, unreadable as
@@ -140,7 +152,7 @@ def load_csv(
         )
     stratify = df[target_column] if task in ("binary", "multiclass") else None
     try:
-        train_df, val_df = train_test_split(
+        train_val_df, test_df = train_test_split(
             df,
             test_size=test_size,
             random_state=random_seed,
@@ -149,13 +161,39 @@ def load_csv(
     except ValueError as exc:
         if stratify is not None:
             raise ValidationError(
-                "Not enough data to perform a stratified train/validation"
+                "Not enough data to perform a stratified train/test"
                 f" split with test_size={test_size}: {exc} Try providing"
                 " more data or adjusting --test-size."
             ) from exc
         raise
-    logger.info(f"Split: {len(train_df)} train, {len(val_df)} validation")
-    return train_df.reset_index(drop=True), val_df.reset_index(drop=True)
+
+    stratify_train_val = (
+        train_val_df[target_column] if task in ("binary", "multiclass") else None
+    )
+    try:
+        train_df, val_df = train_test_split(
+            train_val_df,
+            test_size=val_size,
+            random_state=random_seed,
+            stratify=stratify_train_val,
+        )
+    except ValueError as exc:
+        if stratify_train_val is not None:
+            raise ValidationError(
+                "Not enough data to perform a stratified train/validation"
+                f" split with val_size={val_size}: {exc} Try providing"
+                " more data or adjusting --val-size."
+            ) from exc
+        raise
+
+    logger.info(
+        f"Split: {len(train_df)} train, {len(val_df)} validation, {len(test_df)} test"
+    )
+    return (
+        train_df.reset_index(drop=True),
+        val_df.reset_index(drop=True),
+        test_df.reset_index(drop=True),
+    )
 
 
 def get_metric_fn(task: str):

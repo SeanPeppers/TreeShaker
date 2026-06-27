@@ -54,6 +54,20 @@ class Config:
     output_file: str = "treeshaker_results.csv"
     output_format: str = "csv"
     test_size: float = 0.2
+    """Fraction of the FULL dataset held out as the final test set, used for
+    importance evaluation and leakage statistics. Never used for fitting any
+    model (not during tuning, not in the final combined train+val fit).
+
+    Note: prior to the train/val/test split fix, this field meant "held out
+    validation fraction" (the model's final fit *included* this data). It now
+    means "held out final test fraction" (this data is never fit on at all).
+    Existing callers that relied on the old single-split behavior should
+    review their --test-size value; numeric importance results will also
+    change since they're now computed on a genuinely held-out set."""
+    val_size: float = 0.2
+    """Fraction of the remaining train+val pool (i.e. after test_size is
+    removed from the full dataset) used as the validation set for Optuna
+    trial evaluation / early stopping during hyperparameter tuning."""
     random_seed: int = 42
     optuna_config: OptunaConfig = field(default_factory=OptunaConfig)
     xgboost_config: XGBoostConfig = field(default_factory=XGBoostConfig)
@@ -75,6 +89,14 @@ class Config:
             raise ConfigError(f"task must be one of {valid_tasks}, got {self.task!r}")
         if not 0 < self.test_size < 1:
             raise ConfigError(f"test_size must be in (0, 1), got {self.test_size}")
+        if not 0 < self.val_size < 1:
+            raise ConfigError(f"val_size must be in (0, 1), got {self.val_size}")
+        if self.test_size + self.val_size >= 1:
+            raise ConfigError(
+                "test_size + val_size must be < 1 so train has positive size,"
+                f" got test_size={self.test_size} + val_size={self.val_size}"
+                f" = {self.test_size + self.val_size}"
+            )
         valid_formats = {"csv", "html"}
         if self.output_format not in valid_formats:
             raise ConfigError(

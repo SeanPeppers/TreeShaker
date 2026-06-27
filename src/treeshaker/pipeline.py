@@ -97,7 +97,7 @@ class FeatureSelectionPipeline:
     Orchestrates the full TreeShaker feature selection workflow.
 
     The pipeline runs in the following order:
-    1. Load CSV data and split into train/validation sets.
+    1. Load CSV data and split into train/validation/test sets.
     2. Tune XGBoost hyperparameters with Optuna (skipped when
        config.skip_tuning is True, in which case the configured
        XGBoostConfig values are used directly).
@@ -130,6 +130,7 @@ class FeatureSelectionPipeline:
         self.logger = logging.getLogger(__name__)
         self.train_data: pd.DataFrame | None = None
         self.val_data: pd.DataFrame | None = None
+        self.test_data: pd.DataFrame | None = None
         self.model: Any = None
         self.feature_names: list[str] = []
         self.results: pd.DataFrame | None = None
@@ -138,15 +139,17 @@ class FeatureSelectionPipeline:
 
     def load_data(self) -> None:
         """
-        Load the CSV file and split into train and validation sets.
+        Load the CSV file and split into train, validation, and test sets.
 
-        Populates self.train_data, self.val_data, and self.feature_names.
+        Populates self.train_data, self.val_data, self.test_data, and
+        self.feature_names.
         """
-        self.train_data, self.val_data = load_csv(
+        self.train_data, self.val_data, self.test_data = load_csv(
             filepath=self.config.input_file,
             target_column=self.config.target_column,
             task=self.config.task,
             test_size=self.config.test_size,
+            val_size=self.config.val_size,
             random_seed=self.config.random_seed,
         )
         self.feature_names = [
@@ -154,7 +157,9 @@ class FeatureSelectionPipeline:
         ]
         self.logger.info(f"Features to evaluate: {len(self.feature_names)}")
 
-        combined = pd.concat([self.train_data, self.val_data], ignore_index=True)
+        combined = pd.concat(
+            [self.train_data, self.val_data, self.test_data], ignore_index=True
+        )
         imbalance_warning = check_class_imbalance(
             df=combined,
             target_column=self.config.target_column,
@@ -301,7 +306,7 @@ class FeatureSelectionPipeline:
 
         from .importance import compute_shap_importance
 
-        if self.train_data is None or self.val_data is None:
+        if self.train_data is None or self.val_data is None or self.test_data is None:
             raise RuntimeError(
                 "load_data() must be called before _run_bootstrap_importance()"
             )
@@ -345,7 +350,7 @@ class FeatureSelectionPipeline:
 
             results[i] = compute_shap_importance(
                 model=bootstrap_model,
-                data=self.val_data,
+                data=self.test_data,
                 feature_names=self.feature_names,
             )
             self.logger.info(
@@ -384,8 +389,8 @@ class FeatureSelectionPipeline:
             of the returned DataFrame.
         """
         self.load_data()
-        if self.train_data is None or self.val_data is None:
-            raise RuntimeError("load_data() did not populate train/val data")
+        if self.train_data is None or self.val_data is None or self.test_data is None:
+            raise RuntimeError("load_data() did not populate train/val/test data")
 
         if self.config.skip_tuning:
             self.logger.info(
@@ -401,13 +406,13 @@ class FeatureSelectionPipeline:
 
         shap_importance = compute_shap_importance(
             model=self.model,
-            data=self.val_data,
+            data=self.test_data,
             feature_names=self.feature_names,
         )
 
         perm_importance = compute_permutation_importance(
             model=self.model,
-            data=self.val_data,
+            data=self.test_data,
             target_column=self.config.target_column,
             feature_names=self.feature_names,
             metric_fn=metric_fn,
@@ -415,7 +420,7 @@ class FeatureSelectionPipeline:
         )
 
         mi_score = compute_mutual_information(
-            data=self.val_data,
+            data=self.test_data,
             target_column=self.config.target_column,
             feature_names=self.feature_names,
             task=self.config.task,
@@ -431,8 +436,14 @@ class FeatureSelectionPipeline:
             perm_importance=perm_importance,
         )
 
+        # Leakage detection looks at statistical properties (e.g. target
+        # correlation) across the whole dataset, not held-out generalization
+        # -- unlike importance evaluation above, using all three splits here
+        # is correct and intentional.
         leakage_detector = LeakageDetector(self.config.leakage_config)
-        combined_data = pd.concat([self.train_data, self.val_data], ignore_index=True)
+        combined_data = pd.concat(
+            [self.train_data, self.val_data, self.test_data], ignore_index=True
+        )
         leakage_warnings = leakage_detector.detect(
             df=combined_data,
             target_column=self.config.target_column,
@@ -506,7 +517,7 @@ class FeatureSelectionPipeline:
         if self.config.compute_shap_interactions:
             self.interactions = compute_shap_interactions(
                 model=self.model,
-                data=self.val_data,
+                data=self.test_data,
                 feature_names=self.feature_names,
             )
             stem, _ = os.path.splitext(self.config.output_file)

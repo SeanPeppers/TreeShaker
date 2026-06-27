@@ -145,7 +145,17 @@ def parse_arguments() -> argparse.Namespace:
         "--test-size",
         type=float,
         default=0.2,
-        help="Fraction of data used for validation. (default: 0.2)",
+        help="Fraction of the full dataset held out as the final test set."
+        " This data is never used to fit any model and is used for the"
+        " final importance evaluation and leakage statistics. (default: 0.2)",
+    )
+    parser.add_argument(
+        "--val-size",
+        type=float,
+        default=0.2,
+        help="Fraction of the remaining train+val pool (after --test-size is"
+        " removed) used as the validation set for Optuna trial evaluation"
+        " during hyperparameter tuning. (default: 0.2)",
     )
     parser.add_argument(
         "--random-seed",
@@ -197,6 +207,7 @@ def main() -> int:
             output_file=args.output,
             output_format=args.output_format,
             test_size=args.test_size,
+            val_size=args.val_size,
             random_seed=args.random_seed,
             optuna_config=OptunaConfig(
                 n_trials=args.optuna_trials,

@@ -107,3 +107,92 @@ def test_load_csv_too_few_rows_for_stratified_split_raises_validation_error(
     )
     with pytest.raises(ValidationError, match="stratified"):
         load_csv(str(csv_path), "target", "binary", test_size=0.9)
+
+
+def test_load_csv_returns_three_way_split(tmp_path):
+    n = 200
+    df = pd.DataFrame(
+        {
+            "feature": range(n),
+            "target": [0, 1] * (n // 2),
+        }
+    )
+    csv_path = tmp_path / "data.csv"
+    df.to_csv(csv_path, index=False)
+
+    train_df, val_df, test_df = load_csv(
+        str(csv_path), "target", "binary", test_size=0.2, val_size=0.25
+    )
+
+    # Roughly: test ~20% of 200 = 40; remaining 160, val ~25% of that = 40;
+    # train ~120.
+    assert len(test_df) == pytest.approx(40, abs=2)
+    assert len(val_df) == pytest.approx(40, abs=2)
+    assert len(train_df) == pytest.approx(120, abs=4)
+    assert len(train_df) + len(val_df) + len(test_df) == n
+
+
+def test_load_csv_three_way_split_is_disjoint(tmp_path):
+    n = 200
+    df = pd.DataFrame(
+        {
+            "feature": range(n),
+            "target": [0, 1] * (n // 2),
+        }
+    )
+    csv_path = tmp_path / "data.csv"
+    df.to_csv(csv_path, index=False)
+
+    train_df, val_df, test_df = load_csv(str(csv_path), "target", "binary")
+
+    # Use the original "feature" column (a unique row id) to verify
+    # disjointness and full coverage, since indices are reset per split.
+    train_ids = set(train_df["feature"])
+    val_ids = set(val_df["feature"])
+    test_ids = set(test_df["feature"])
+
+    assert train_ids.isdisjoint(val_ids)
+    assert train_ids.isdisjoint(test_ids)
+    assert val_ids.isdisjoint(test_ids)
+    assert train_ids | val_ids | test_ids == set(df["feature"])
+
+
+def test_load_csv_three_way_split_stratification_binary(tmp_path):
+    n = 300
+    df = pd.DataFrame(
+        {
+            "feature": range(n),
+            "target": [0] * 200 + [1] * 100,
+        }
+    )
+    csv_path = tmp_path / "data.csv"
+    df.to_csv(csv_path, index=False)
+
+    train_df, val_df, test_df = load_csv(
+        str(csv_path), "target", "binary", test_size=0.2, val_size=0.2
+    )
+
+    for split in (train_df, val_df, test_df):
+        minority_frac = split["target"].value_counts(normalize=True).min()
+        assert minority_frac == pytest.approx(1 / 3, abs=0.05)
+
+
+def test_load_csv_three_way_split_stratification_multiclass(tmp_path):
+    n = 300
+    df = pd.DataFrame(
+        {
+            "feature": range(n),
+            "target": [0] * 100 + [1] * 100 + [2] * 100,
+        }
+    )
+    csv_path = tmp_path / "data.csv"
+    df.to_csv(csv_path, index=False)
+
+    train_df, val_df, test_df = load_csv(
+        str(csv_path), "target", "multiclass", test_size=0.2, val_size=0.2
+    )
+
+    for split in (train_df, val_df, test_df):
+        counts = split["target"].value_counts(normalize=True)
+        for frac in counts:
+            assert frac == pytest.approx(1 / 3, abs=0.05)
