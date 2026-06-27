@@ -2,11 +2,13 @@
 
 from unittest.mock import patch
 
+import numpy as np
 import pandas as pd
 import pytest
 
 from treeshaker.config import BootstrapConfig, Config, OptunaConfig, XGBoostConfig
 from treeshaker.pipeline import FeatureSelectionPipeline
+from treeshaker.residual_diagnostics import ResidualConfig
 
 
 def make_fast_config(input_file, task, tmp_path):
@@ -347,3 +349,148 @@ def test_pipeline_skip_tuning_uses_configured_xgboost_params(binary_csv, tmp_pat
 
     assert pipeline.model.get_params()["max_depth"] == 3
     assert pipeline.model.get_params()["n_estimators"] == 5
+
+
+def test_check_residuals_off_by_default(binary_csv, tmp_path):
+    """check_residuals defaults to False; schema is unchanged."""
+    config = make_fast_config(binary_csv, "binary", tmp_path)
+    assert config.check_residuals is False
+    results = FeatureSelectionPipeline(config).run()
+    assert set(results.columns) == {
+        "feature_name",
+        "shap_importance",
+        "permutation_importance",
+        "mutual_info_score",
+        "recommendation",
+        "reason",
+    }
+
+
+def make_fast_residual_config(input_file, task, tmp_path, **kwargs):
+    """Config with residual diagnostics enabled, kept small/fast for tests."""
+    return Config(
+        input_file=input_file,
+        target_column="target",
+        task=task,
+        output_file=str(tmp_path / "results.csv"),
+        output_format="csv",
+        optuna_config=OptunaConfig(n_trials=5, timeout=60),
+        check_residuals=True,
+        **kwargs,
+    )
+
+
+def test_check_residuals_adds_column_binary(binary_csv, tmp_path):
+    config = make_fast_residual_config(binary_csv, "binary", tmp_path)
+    results = FeatureSelectionPipeline(config).run()
+    assert "residual_correlation" in results.columns
+    assert results["residual_correlation"].shape == (10,)
+
+
+def test_check_residuals_adds_column_regression(regression_csv, tmp_path):
+    config = make_fast_residual_config(regression_csv, "regression", tmp_path)
+    results = FeatureSelectionPipeline(config).run()
+    assert "residual_correlation" in results.columns
+    assert results["residual_correlation"].shape == (20,)
+
+
+def test_check_residuals_adds_column_multiclass(multiclass_csv, tmp_path):
+    config = make_fast_residual_config(multiclass_csv, "multiclass", tmp_path)
+    results = FeatureSelectionPipeline(config).run()
+    assert "residual_correlation" in results.columns
+    assert results["residual_correlation"].shape == (15,)
+
+
+def test_residual_correlation_detects_constructed_feature(tmp_path):
+    """A feature deliberately correlated with residuals should be flagged.
+
+    Construct a regression target that depends almost entirely on
+    feature_0, with the model trained using skip_tuning and a shallow
+    XGBoost config so it badly under-fits feature_1's contribution. A
+    second feature (feature_1) is built so that the *residual* of the
+    feature_0-only fit is strongly correlated with feature_1's value,
+    simulating an interaction/non-linearity the model fails to use.
+    """
+    rng = np.random.default_rng(0)
+    n = 300
+    feature_0 = rng.normal(size=n)
+    feature_1 = rng.normal(size=n)
+    noise = rng.normal(scale=0.01, size=n)
+    # Target depends on feature_0 linearly, plus a feature_1 contribution
+    # that a depth-1, single-tree model trained only a few rounds will
+    # systematically fail to capture, leaving it visible in the residual.
+    target = feature_0 * 5.0 + feature_1 * 20.0 + noise
+
+    df = pd.DataFrame(
+        {"feature_0": feature_0, "feature_1": feature_1, "target": target}
+    )
+    path = tmp_path / "constructed.csv"
+    df.to_csv(path, index=False)
+
+    config = Config(
+        input_file=str(path),
+        target_column="target",
+        task="regression",
+        output_file=str(tmp_path / "results.csv"),
+        output_format="csv",
+        xgboost_config=XGBoostConfig(max_depth=1, extra_params={"n_estimators": 1}),
+        skip_tuning=True,
+        check_residuals=True,
+        residual_config=ResidualConfig(residual_corr_threshold=0.3),
+    )
+    results = FeatureSelectionPipeline(config).run()
+
+    feature_1_row = results[results["feature_name"] == "feature_1"].iloc[0]
+    assert abs(feature_1_row["residual_correlation"]) >= 0.3
+
+
+def test_residual_correlation_does_not_fire_on_unrelated_noise(binary_csv, tmp_path):
+    """An unrelated/noise feature should not be flagged for residual correlation."""
+    config = make_fast_residual_config(
+        binary_csv,
+        "binary",
+        tmp_path,
+        residual_config=ResidualConfig(residual_corr_threshold=0.9),
+    )
+    results = FeatureSelectionPipeline(config).run()
+    # With a very high threshold, nothing should be flagged in the reason text.
+    assert not results["reason"].str.contains("residuals", regex=False).any()
+
+
+def test_residual_note_downgrades_drop_to_caution(tmp_path):
+    """A feature flagged Drop by HarmDetector but correlated with residuals
+    should be downgraded to Caution with an explanatory note appended."""
+    rng = np.random.default_rng(1)
+    n = 300
+    feature_0 = rng.normal(size=n)
+    feature_1 = rng.normal(size=n)
+    noise = rng.normal(scale=0.01, size=n)
+    target = feature_0 * 5.0 + feature_1 * 20.0 + noise
+
+    df = pd.DataFrame(
+        {"feature_0": feature_0, "feature_1": feature_1, "target": target}
+    )
+    path = tmp_path / "constructed_drop.csv"
+    df.to_csv(path, index=False)
+
+    config = Config(
+        input_file=str(path),
+        target_column="target",
+        task="regression",
+        output_file=str(tmp_path / "results.csv"),
+        output_format="csv",
+        xgboost_config=XGBoostConfig(max_depth=1, extra_params={"n_estimators": 1}),
+        skip_tuning=True,
+        check_residuals=True,
+        residual_config=ResidualConfig(residual_corr_threshold=0.3),
+        # Push the harm thresholds high so feature_1 (under-used by the
+        # shallow model) gets flagged Drop by SHAP/permutation alone.
+        shap_importance_threshold=1.0,
+        permutation_importance_threshold=1.0,
+    )
+    results = FeatureSelectionPipeline(config).run()
+    feature_1_row = results[results["feature_name"] == "feature_1"].iloc[0]
+
+    if abs(feature_1_row["residual_correlation"]) >= 0.3:
+        assert feature_1_row["recommendation"] == "Caution"
+        assert "residuals" in feature_1_row["reason"]

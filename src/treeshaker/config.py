@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass, field
 
 from .exceptions import ConfigError
 from .leakage_detection import LeakageConfig
+from .residual_diagnostics import ResidualConfig
 
 
 @dataclass
@@ -81,6 +82,15 @@ class Config:
     imbalance_warning_threshold: float = 0.1
     verbose: bool = False
     skip_tuning: bool = False
+    check_residuals: bool = False
+    """If True, compute per-feature correlation with model prediction
+    residuals on the held-out test set and surface a warning when a
+    feature flagged "Drop" correlates with residuals beyond
+    residual_config.residual_corr_threshold. Off by default; adds a
+    residual_correlation column to the results DataFrame when enabled.
+    See residual_diagnostics.py for the full definition of "residual" per
+    task type."""
+    residual_config: ResidualConfig = field(default_factory=ResidualConfig)
 
     def __post_init__(self) -> None:
         """Validate configuration values."""
@@ -112,4 +122,9 @@ class Config:
             raise ConfigError(
                 "bootstrap_config.sample_frac must be in (0, 1], got"
                 f" {self.bootstrap_config.sample_frac}"
+            )
+        if self.residual_config.residual_corr_threshold <= 0:
+            raise ConfigError(
+                "residual_config.residual_corr_threshold must be > 0, got"
+                f" {self.residual_config.residual_corr_threshold}"
             )
