@@ -52,6 +52,102 @@ def test_parse_arguments_defaults():
     assert not args.verbose
     assert args.n_permutations == 5
     assert args.permutation_metric is None
+    assert args.device == "auto"
+
+
+def test_parse_arguments_device_explicit():
+    with patch(
+        "sys.argv",
+        [
+            "treeshaker",
+            "--input",
+            "f.csv",
+            "--target",
+            "y",
+            "--task",
+            "regression",
+            "--device",
+            "cpu",
+        ],
+    ):
+        args = parse_arguments()
+    assert args.device == "cpu"
+
+
+def test_parse_arguments_device_invalid_rejected():
+    with (
+        patch(
+            "sys.argv",
+            [
+                "treeshaker",
+                "--input",
+                "f.csv",
+                "--target",
+                "y",
+                "--task",
+                "regression",
+                "--device",
+                "tpu",
+            ],
+        ),
+        pytest.raises(SystemExit),
+    ):
+        parse_arguments()
+
+
+def test_main_end_to_end_with_explicit_cpu_device(binary_csv, tmp_path):
+    """--device cpu should run the full pipeline without requiring a GPU."""
+    output = str(tmp_path / "results.csv")
+    with patch(
+        "sys.argv",
+        [
+            "treeshaker",
+            "--input",
+            binary_csv,
+            "--target",
+            "target",
+            "--task",
+            "binary",
+            "--output",
+            output,
+            "--optuna-trials",
+            "1",
+            "--device",
+            "cpu",
+        ],
+    ):
+        exit_code = main()
+    assert exit_code == 0
+
+
+def test_main_explicit_cuda_device_without_gpu_returns_error(binary_csv, tmp_path):
+    """Forcing --device cuda with no usable GPU should fail clearly, not
+
+    silently fall back to CPU (that silent fallback is reserved for the
+    "auto" default).
+    """
+    output = str(tmp_path / "results.csv")
+    with (
+        patch(
+            "sys.argv",
+            [
+                "treeshaker",
+                "--input",
+                binary_csv,
+                "--target",
+                "target",
+                "--task",
+                "binary",
+                "--output",
+                output,
+                "--device",
+                "cuda",
+            ],
+        ),
+        patch("treeshaker.config.detect_cuda_available", return_value=False),
+    ):
+        exit_code = main()
+    assert exit_code == 1
 
 
 def test_main_invalid_json_xgboost_params(tmp_path):

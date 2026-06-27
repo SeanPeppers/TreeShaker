@@ -1,6 +1,7 @@
 """Utility functions for TreeShaker."""
 
 import logging
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -13,6 +14,63 @@ from .exceptions import ValidationError
 #: Named metric overrides supported by `--permutation-metric` /
 #: Config.permutation_metric.
 VALID_PERMUTATION_METRICS = {"roc_auc", "accuracy", "neg_mse", "wape"}
+
+
+@lru_cache(maxsize=1)
+def detect_cuda_available() -> bool:
+    """Detect whether XGBoost can actually train on a CUDA GPU right now.
+
+    This does more than check whether the installed xgboost build was
+    compiled with CUDA support -- it attempts a trivial real fit with
+    ``device="cuda"`` on a tiny synthetic dataset, since that's the only
+    reliable way to know a usable GPU is actually present and the CUDA
+    runtime is correctly set up. The result is cached for the lifetime of
+    the process (via lru_cache) since each check involves XGBoost booster
+    setup and would otherwise be re-run for every fold/fit, which is
+    expensive for something that can't change mid-run.
+
+    Returns:
+        True if a CUDA device is available and a trivial XGBoost fit with
+        device="cuda" succeeds; False otherwise (no GPU, no CUDA-enabled
+        build, driver issue, etc).
+    """
+    try:
+        import xgboost as xgb
+
+        X = np.zeros((4, 2), dtype=np.float32)
+        y = np.array([0.0, 1.0, 0.0, 1.0], dtype=np.float32)
+        model = xgb.XGBRegressor(
+            n_estimators=1, max_depth=1, device="cuda", verbosity=0
+        )
+        model.fit(X, y)
+        return True
+    except Exception:
+        return False
+
+
+def resolve_xgboost_device(device: str) -> str:
+    """Resolve a configured device setting to the literal value passed to XGBoost.
+
+    Args:
+        device: One of "auto", "cuda", "cpu" (see XGBoostConfig.device).
+
+    Returns:
+        "cuda" or "cpu" -- the literal value to pass as XGBoost's `device`
+        param. For "auto", uses detect_cuda_available() (cached) to decide,
+        silently falling back to "cpu" if no usable GPU is found. For
+        explicit "cuda"/"cpu", returns it as-is without re-checking
+        availability -- the caller is expected to have already validated
+        "cuda" is actually usable (see Config validation), so this function
+        never raises.
+
+    Raises:
+        ValueError: If device is not one of "auto", "cuda", "cpu".
+    """
+    if device == "auto":
+        return "cuda" if detect_cuda_available() else "cpu"
+    if device in ("cuda", "cpu"):
+        return device
+    raise ValueError(f"device must be one of 'auto', 'cuda', 'cpu', got {device!r}")
 
 
 def validate_target(df: pd.DataFrame, target_column: str, task: str) -> None:

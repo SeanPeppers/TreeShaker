@@ -23,7 +23,13 @@ from .residual_diagnostics import (
     flag_residual_correlated_features,
 )
 from .synthetic_features import SyntheticFeatureSuggestion, suggest_synthetic_features
-from .utils import check_class_imbalance, get_metric_fn, load_csv, save_results
+from .utils import (
+    check_class_imbalance,
+    get_metric_fn,
+    load_csv,
+    resolve_xgboost_device,
+    save_results,
+)
 
 
 def derive_prefix_groups(feature_names: list[str]) -> dict[str, list[str]]:
@@ -206,6 +212,7 @@ class FeatureSelectionPipeline:
         y_train = self.train_data[self.config.target_column]
         X_val = self.val_data[self.feature_names]
         y_val = self.val_data[self.config.target_column]
+        device = resolve_xgboost_device(xgb_cfg.device)
 
         def objective(trial: optuna.Trial) -> float:
             params = {
@@ -219,6 +226,7 @@ class FeatureSelectionPipeline:
                 "min_child_weight": trial.suggest_int("min_child_weight", 1, 10),
                 "random_state": self.config.random_seed,
                 "verbosity": 0,
+                "device": device,
             }
             params.update(xgb_cfg.extra_params)
 
@@ -275,6 +283,7 @@ class FeatureSelectionPipeline:
             **best_params,
             "random_state": self.config.random_seed,
             "verbosity": 0,
+            "device": resolve_xgboost_device(self.config.xgboost_config.device),
         }
         params.update(self.config.xgboost_config.extra_params)
 
@@ -327,6 +336,7 @@ class FeatureSelectionPipeline:
             **best_params,
             "random_state": self.config.random_seed,
             "verbosity": 0,
+            "device": resolve_xgboost_device(self.config.xgboost_config.device),
         }
         params.update(self.config.xgboost_config.extra_params)
 
