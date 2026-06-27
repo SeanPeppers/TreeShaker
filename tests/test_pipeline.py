@@ -9,6 +9,7 @@ import pytest
 from treeshaker.config import BootstrapConfig, Config, OptunaConfig, XGBoostConfig
 from treeshaker.pipeline import FeatureSelectionPipeline
 from treeshaker.residual_diagnostics import ResidualConfig
+from treeshaker.synthetic_features import SyntheticConfig, SyntheticFeatureSuggestion
 
 
 def make_fast_config(input_file, task, tmp_path):
@@ -554,3 +555,117 @@ def test_config_invalid_n_permutations_raises():
             task="binary",
             n_permutations=0,
         )
+
+
+def test_pipeline_synthesis_disabled_by_default(regression_csv, tmp_path):
+    """Disabled by default: no suggested_features, no behavior change."""
+    config = make_fast_config(regression_csv, "regression", tmp_path)
+    config.skip_tuning = True
+    pipeline = FeatureSelectionPipeline(config)
+    results = pipeline.run()
+
+    assert config.synthetic_config.synthesize_from_interactions is False
+    assert pipeline.suggested_features is None
+    assert pipeline.interactions is None
+    assert not (tmp_path / "results_suggested_features.csv").exists()
+    assert set(results.columns) == {
+        "feature_name",
+        "shap_importance",
+        "permutation_importance",
+        "permutation_importance_std",
+        "mutual_info_score",
+        "recommendation",
+        "reason",
+    }
+
+
+def test_pipeline_synthesis_requires_interactions_warns_and_noops(
+    regression_csv, tmp_path, caplog
+):
+    """synthesize_from_interactions=True without compute_shap_interactions
+    warns and no-ops."""
+    config = make_fast_config(regression_csv, "regression", tmp_path)
+    config.skip_tuning = True
+    config.compute_shap_interactions = False
+    config.synthetic_config = SyntheticConfig(synthesize_from_interactions=True)
+
+    pipeline = FeatureSelectionPipeline(config)
+    with caplog.at_level("WARNING"):
+        pipeline.run()
+
+    assert pipeline.suggested_features is None
+    assert any(
+        "synthesize_from_interactions" in record.message for record in caplog.records
+    )
+
+
+def test_pipeline_synthesis_enabled_surfaces_candidate(tmp_path):
+    """A real interaction surface should produce a suggestion above threshold."""
+    rng = np.random.default_rng(42)
+    n = 400
+    feature_a = rng.normal(size=n)
+    feature_b = rng.normal(size=n)
+    feature_c = rng.normal(size=n)
+    target = feature_a * feature_b + rng.normal(scale=0.05, size=n)
+    df = pd.DataFrame(
+        {
+            "feature_a": feature_a,
+            "feature_b": feature_b,
+            "feature_c": feature_c,
+            "target": target,
+        }
+    )
+    input_csv = tmp_path / "crossing.csv"
+    df.to_csv(input_csv, index=False)
+
+    config = Config(
+        input_file=str(input_csv),
+        target_column="target",
+        task="regression",
+        output_file=str(tmp_path / "results.csv"),
+        skip_tuning=True,
+        compute_shap_interactions=True,
+        synthetic_config=SyntheticConfig(
+            synthesize_from_interactions=True, interaction_top_n=3, mi_threshold=0.01
+        ),
+    )
+    pipeline = FeatureSelectionPipeline(config)
+    pipeline.run()
+
+    assert pipeline.interactions is not None
+    assert pipeline.suggested_features is not None
+    assert len(pipeline.suggested_features) >= 1
+    assert all(
+        isinstance(s, SyntheticFeatureSuggestion) for s in pipeline.suggested_features
+    )
+    assert (tmp_path / "results_suggested_features.csv").exists()
+
+
+def test_pipeline_synthesis_mi_threshold_filters_weak_candidates(tmp_path):
+    """A very high mi_threshold filters out all candidates."""
+    rng = np.random.default_rng(42)
+    n = 400
+    feature_a = rng.normal(size=n)
+    feature_b = rng.normal(size=n)
+    target = feature_a * feature_b + rng.normal(scale=0.05, size=n)
+    df = pd.DataFrame(
+        {"feature_a": feature_a, "feature_b": feature_b, "target": target}
+    )
+    input_csv = tmp_path / "crossing.csv"
+    df.to_csv(input_csv, index=False)
+
+    config = Config(
+        input_file=str(input_csv),
+        target_column="target",
+        task="regression",
+        output_file=str(tmp_path / "results.csv"),
+        skip_tuning=True,
+        compute_shap_interactions=True,
+        synthetic_config=SyntheticConfig(
+            synthesize_from_interactions=True, mi_threshold=10.0
+        ),
+    )
+    pipeline = FeatureSelectionPipeline(config)
+    pipeline.run()
+
+    assert pipeline.suggested_features == []

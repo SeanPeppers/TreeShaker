@@ -34,6 +34,7 @@ Most feature-importance tools give you a single number per feature from a single
 - [Class imbalance warning](#class-imbalance-warning)
 - [Bootstrap importance stability (opt-in)](#bootstrap-importance-stability-opt-in)
 - [Residual correlation diagnostics (opt-in)](#residual-correlation-diagnostics-opt-in)
+- [Feature suggestion (experimental)](#feature-suggestion-experimental)
 - [Feature-group importance](#feature-group-importance)
 - [Try it interactively](#try-it-interactively)
 - [Development](#development)
@@ -210,6 +211,9 @@ TreeShaker **automatically** derives `recommendation` and `reason` for every fea
 | `--bootstrap-sample-frac` | No | `1.0` | Fraction of combined train+val rows sampled (with replacement) per bootstrap iteration |
 | `--check-residuals` | No | `False` | Compute per-feature correlation with model prediction residuals on the held-out test set (opt-in) |
 | `--residual-corr-threshold` | No | `0.3` | Flag a feature whose \|correlation with residuals\| exceeds this. Only used when `--check-residuals` is set |
+| `--synthesize-features` | No | `False` | Suggest candidate pairwise-product features from the strongest SHAP interactions, scored by mutual information (opt-in, advisory only). Requires `--shap-interactions` |
+| `--synthesis-top-n` | No | `5` | Number of strongest SHAP-interacting pairs to consider as candidates. Only used when `--synthesize-features` is set |
+| `--synthesis-mi-threshold` | No | `0.01` | Minimum mutual information score a candidate must exceed to be reported. Only used when `--synthesize-features` is set |
 | `--test-size` | No | `0.2` | Fraction of the *full* dataset held out as the final test set. Never used to fit any model; used for importance evaluation and leakage statistics |
 | `--val-size` | No | `0.2` | Fraction of the *remaining* train+val pool (after `--test-size` is removed) used for validation during Optuna tuning |
 | `--shap-sample-size` | No | unset (use all rows) | If set and smaller than the dataset's row count, randomly sample this many rows (using `--random-seed`) for SHAP importance computation instead of the full dataset |
@@ -419,6 +423,47 @@ print(results[["feature_name", "recommendation", "residual_correlation"]])
 ```
 
 When `--check-residuals` is off (the default), there is zero behavior change: no new column, no schema change, no extra computation.
+
+## Feature suggestion (experimental)
+
+> **Advisory only.** This feature only *reports* candidate features for a human to evaluate. Suggested features are never added to the model, never written into the training data, and never change any ranking or recommendation produced elsewhere in the pipeline.
+
+[SHAP interaction values](#shap-interaction-values) tell you *which* feature pairs the model treats as interacting strongly, but not what to do about it. One common next step is to engineer an explicit derived feature for the interaction (e.g. a pairwise product) so the model doesn't have to reconstruct it from splits on the two raw columns. This prototype automates the first pass of that workflow: it takes the strongest interacting pairs, builds a candidate product feature for each, and scores the candidate by mutual information against the target — so you see which candidates actually carry signal before deciding whether to engineer them for real.
+
+Pass `--synthesize-features` (or set `synthetic_config=SyntheticConfig(synthesize_from_interactions=True)` in `Config`) to enable it. This is **opt-in and off by default**, and it **requires `--shap-interactions` to also be enabled** — if it's set without `--shap-interactions`, TreeShaker logs a warning and skips synthesis (no error, no behavior change) since there's no interaction data to suggest from.
+
+When enabled:
+
+- TreeShaker takes the top `--synthesis-top-n` (default `5`) strongest pairs from the SHAP interaction matrix.
+- For each pair, it builds a candidate feature as the elementwise product of the two raw columns, named `"{feature_a}__x__{feature_b}"`.
+- It computes mutual information between each candidate and the target (the same `mutual_info_classif`/`mutual_info_regression` machinery used elsewhere in TreeShaker).
+- Only candidates with `mi_score` strictly greater than `--synthesis-mi-threshold` (default `0.01`) are kept, sorted descending by `mi_score`.
+- Results are written to `<output_stem>_suggested_features.csv` and made available on `pipeline.suggested_features` after calling `run()` from the Python API.
+
+```bash
+treeshaker --input data.csv --target churn --task binary --shap-interactions --synthesize-features --synthesis-top-n 5 --synthesis-mi-threshold 0.01
+```
+
+```python
+from treeshaker import FeatureSelectionPipeline, Config
+from treeshaker.synthetic_features import SyntheticConfig
+
+config = Config(
+    input_file="data.csv",
+    target_column="churn",
+    task="binary",
+    compute_shap_interactions=True,
+    synthetic_config=SyntheticConfig(
+        synthesize_from_interactions=True, interaction_top_n=5, mi_threshold=0.01
+    ),
+)
+pipeline = FeatureSelectionPipeline(config)
+results = pipeline.run()
+for s in pipeline.suggested_features:
+    print(s.suggested_name, s.mi_score)
+```
+
+This is a v1 prototype: pairwise products only (no genetic programming, no other operators, no LLM hookup), and it only considers pairs already surfaced by SHAP interactions rather than searching the full feature space. When `--synthesize-features` is off (the default), there is zero behavior change: no new file, no schema change, no extra computation.
 
 ## Feature-group importance
 
