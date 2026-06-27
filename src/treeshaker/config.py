@@ -5,6 +5,7 @@ from dataclasses import asdict, dataclass, field
 from .exceptions import ConfigError
 from .leakage_detection import LeakageConfig
 from .residual_diagnostics import ResidualConfig
+from .utils import VALID_PERMUTATION_METRICS
 
 
 @dataclass
@@ -91,6 +92,17 @@ class Config:
     See residual_diagnostics.py for the full definition of "residual" per
     task type."""
     residual_config: ResidualConfig = field(default_factory=ResidualConfig)
+    n_permutations: int = 5
+    """Number of shuffles per feature for permutation importance, averaged
+    to reduce single-shuffle noise. 5 matches sklearn's own
+    permutation_importance default -- a reasonable balance between
+    stability and runtime."""
+    permutation_metric: str | None = None
+    """Optional override for the metric used specifically for permutation
+    importance (does not affect Optuna tuning). One of "roc_auc",
+    "accuracy", "neg_mse", or "wape". None (default) preserves the
+    automatic per-task default: ROC-AUC for binary, accuracy for
+    multiclass, negative MSE for regression."""
 
     def __post_init__(self) -> None:
         """Validate configuration values."""
@@ -127,4 +139,15 @@ class Config:
             raise ConfigError(
                 "residual_config.residual_corr_threshold must be > 0, got"
                 f" {self.residual_config.residual_corr_threshold}"
+            )
+        if self.n_permutations < 1:
+            raise ConfigError(f"n_permutations must be >= 1, got {self.n_permutations}")
+        if (
+            self.permutation_metric is not None
+            and self.permutation_metric not in VALID_PERMUTATION_METRICS
+        ):
+            raise ConfigError(
+                "permutation_metric must be one of"
+                f" {sorted(VALID_PERMUTATION_METRICS)}, got"
+                f" {self.permutation_metric!r}"
             )

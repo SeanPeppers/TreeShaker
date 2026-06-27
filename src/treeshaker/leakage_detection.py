@@ -141,9 +141,11 @@ class LeakageDetector:
             if abs(corr) >= self.config.target_corr_threshold:
                 warnings[name].append(
                     f"Suspiciously high correlation with the target"
-                    f" (r={corr:.2f}). This feature may have been derived"
-                    f" from or calculated using the target variable, which"
-                    f" would be data leakage."
+                    f" (r={corr:.2f}, at or above the"
+                    f" {self.config.target_corr_threshold:.2f} threshold)."
+                    f" This feature may have been derived from or calculated"
+                    f" using the target variable, which would be data"
+                    f" leakage."
                 )
 
     def _check_dominant_shap(
@@ -161,11 +163,13 @@ class LeakageDetector:
             fraction = shap_importance[i] / total_shap
             if fraction >= self.config.dominant_shap_fraction:
                 pct = int(fraction * 100)
+                threshold_pct = int(self.config.dominant_shap_fraction * 100)
                 warnings[name].append(
-                    f"This feature accounts for {pct}% of total model"
-                    f" attention (SHAP). A single feature dominating this"
-                    f" strongly is unusual — it may contain information"
-                    f" that should not be available at prediction time."
+                    f"This feature accounts for {pct}% of total SHAP"
+                    f" importance, at or above the {threshold_pct}%"
+                    f" threshold. A single feature dominating this strongly"
+                    f" is unusual — it may contain information that should"
+                    f" not be available at prediction time."
                 )
 
     def _check_near_constant(
@@ -179,10 +183,12 @@ class LeakageDetector:
             top_freq = df[name].value_counts(normalize=True).iloc[0]
             if top_freq >= self.config.near_constant_threshold:
                 pct = int(top_freq * 100)
+                threshold_pct = int(self.config.near_constant_threshold * 100)
                 warnings[name].append(
-                    f"Nearly constant: {pct}% of rows share the same value."
-                    f" A feature with almost no variation cannot help the"
-                    f" model distinguish between examples."
+                    f"Nearly constant: {pct}% of rows share the same value,"
+                    f" at or above the {threshold_pct}% threshold. A feature"
+                    f" with almost no variation cannot help the model"
+                    f" distinguish between examples."
                 )
 
     def _check_near_duplicates(
@@ -211,8 +217,10 @@ class LeakageDetector:
                 if corr_val >= self.config.near_duplicate_corr_threshold:
                     warnings[name].append(
                         f"Nearly identical to '{other}' (correlation:"
-                        f" {corr_val:.2f}). Keeping both adds redundancy"
-                        f" without extra signal — consider dropping one."
+                        f" {corr_val:.2f}, at or above the"
+                        f" {self.config.near_duplicate_corr_threshold:.2f}"
+                        f" threshold). Keeping both adds redundancy without"
+                        f" extra signal — consider dropping one."
                     )
 
     def _check_multicollinearity(
@@ -267,11 +275,13 @@ class LeakageDetector:
             if vif >= self.config.vif_threshold:
                 vif_str = "infinite" if np.isinf(vif) else f"{vif:.1f}"
                 warnings[name].append(
-                    f"High multicollinearity (VIF={vif_str}). This feature"
-                    f" can be closely reconstructed from a combination of"
-                    f" the other features, which is redundancy that"
-                    f" pairwise correlation alone can miss — consider"
-                    f" dropping it or one of the features it overlaps with."
+                    f"High multicollinearity (VIF={vif_str}, at or above the"
+                    f" {self.config.vif_threshold:.1f} threshold). This"
+                    f" feature can be closely reconstructed from a"
+                    f" combination of the other features, which is"
+                    f" redundancy that pairwise correlation alone can miss —"
+                    f" consider dropping it or one of the features it"
+                    f" overlaps with."
                 )
 
     def _check_suspicious_names(

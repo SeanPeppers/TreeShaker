@@ -90,3 +90,31 @@ def test_config_defaults():
     assert cfg.random_seed == 42
     assert cfg.shap_importance_threshold == 0.01
     assert cfg.permutation_importance_threshold == 0.05
+    assert cfg.n_permutations == 5
+    assert cfg.permutation_metric is None
+
+
+def test_config_invalid_n_permutations_raises():
+    with pytest.raises(ConfigError, match="n_permutations"):
+        Config(input_file="f.csv", target_column="y", task="binary", n_permutations=0)
+
+
+def test_config_valid_permutation_metric_accepted():
+    for metric in ("roc_auc", "accuracy", "neg_mse", "wape"):
+        cfg = Config(
+            input_file="f.csv",
+            target_column="y",
+            task="binary",
+            permutation_metric=metric,
+        )
+        assert cfg.permutation_metric == metric
+
+
+def test_config_invalid_permutation_metric_raises():
+    with pytest.raises(ConfigError, match="permutation_metric"):
+        Config(
+            input_file="f.csv",
+            target_column="y",
+            task="binary",
+            permutation_metric="bogus",
+        )

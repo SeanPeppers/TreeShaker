@@ -60,7 +60,10 @@ class HarmDetector:
             if low_shap and low_perm:
                 reason = (
                     "The model ignores this feature entirely — its SHAP "
-                    f"weight is near zero ({shap_importance[i]:.3f}) and "
+                    f"importance is near zero ({shap_importance[i]:.3f}, "
+                    f"below the {self.shap_threshold:.3f} threshold) and its "
+                    f"permutation importance ({perm_importance[i]:.3f}) is "
+                    f"below the {self.perm_threshold:.3f} threshold, meaning "
                     "shuffling it has no effect on predictions."
                 )
                 is_harmful[i] = True
@@ -68,7 +71,8 @@ class HarmDetector:
             elif low_shap:
                 reason = (
                     "The model assigns almost no weight to this feature "
-                    f"(SHAP: {shap_importance[i]:.3f}). It contributes "
+                    f"(SHAP importance: {shap_importance[i]:.3f}, below the "
+                    f"{self.shap_threshold:.3f} threshold). It contributes "
                     "negligible signal to predictions."
                 )
                 is_harmful[i] = True
@@ -76,7 +80,8 @@ class HarmDetector:
             elif low_perm:
                 reason = (
                     "Shuffling this feature barely changes model performance "
-                    f"(permutation importance: {perm_importance[i]:.3f}), "
+                    f"(permutation importance: {perm_importance[i]:.3f}, "
+                    f"below the {self.perm_threshold:.3f} threshold), "
                     "meaning the model is not really using it."
                 )
                 is_harmful[i] = True

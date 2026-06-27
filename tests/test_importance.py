@@ -83,10 +83,12 @@ def test_shap_importance_regression(fitted_regression_model):
 def test_permutation_importance_shape(fitted_binary_model):
     model, df, feature_names = fitted_binary_model
     metric_fn = get_metric_fn("binary")
-    importance = compute_permutation_importance(
+    importance, importance_std = compute_permutation_importance(
         model, df, "target", feature_names, metric_fn, use_predict_proba=True
     )
     assert importance.shape == (8,)
+    assert importance_std.shape == (8,)
+    assert (importance_std >= 0).all()
 
 
 def test_permutation_importance_binary_uses_predict_proba(fitted_binary_model):
@@ -98,10 +100,10 @@ def test_permutation_importance_binary_uses_predict_proba(fitted_binary_model):
     X = df[feature_names]
     y = np.asarray(df["target"].values)
 
-    proba_importance = compute_permutation_importance(
+    proba_importance, _ = compute_permutation_importance(
         model, df, "target", feature_names, metric_fn, use_predict_proba=True
     )
-    label_importance = compute_permutation_importance(
+    label_importance, _ = compute_permutation_importance(
         model, df, "target", feature_names, metric_fn, use_predict_proba=False
     )
 
@@ -121,7 +123,7 @@ def test_permutation_importance_default_is_predict(fitted_regression_model):
     behavior for regression (and multiclass) tasks."""
     model, df, feature_names = fitted_regression_model
     metric_fn = get_metric_fn("regression")
-    importance = compute_permutation_importance(
+    importance, _ = compute_permutation_importance(
         model, df, "target", feature_names, metric_fn
     )
     assert importance.shape == (8,)
@@ -175,11 +177,81 @@ def test_permutation_importance_informative_features_positive(
     """Informative features should have positive permutation importance."""
     model, df, feature_names = fitted_regression_model
     metric_fn = get_metric_fn("regression")
-    importance = compute_permutation_importance(
+    importance, _ = compute_permutation_importance(
         model, df, "target", feature_names, metric_fn
     )
     # At least some features should have positive importance
     assert (importance > 0).any()
+
+
+def test_permutation_importance_n_repeats_reproducible(fitted_binary_model):
+    """Same n_repeats should give identical results across two calls."""
+    model, df, feature_names = fitted_binary_model
+    metric_fn = get_metric_fn("binary")
+    importance1, std1 = compute_permutation_importance(
+        model,
+        df,
+        "target",
+        feature_names,
+        metric_fn,
+        use_predict_proba=True,
+        n_repeats=5,
+    )
+    importance2, std2 = compute_permutation_importance(
+        model,
+        df,
+        "target",
+        feature_names,
+        metric_fn,
+        use_predict_proba=True,
+        n_repeats=5,
+    )
+    np.testing.assert_array_equal(importance1, importance2)
+    np.testing.assert_array_equal(std1, std2)
+
+
+def test_permutation_importance_n_repeats_1_vs_5_differ(fitted_binary_model):
+    """A single shuffle vs. averaging 5 shuffles should generally differ,
+    since they use different (and in the n_repeats=5 case, multiple)
+    underlying permutations."""
+    model, df, feature_names = fitted_binary_model
+    metric_fn = get_metric_fn("binary")
+    importance_1, std_1 = compute_permutation_importance(
+        model,
+        df,
+        "target",
+        feature_names,
+        metric_fn,
+        use_predict_proba=True,
+        n_repeats=1,
+    )
+    importance_5, std_5 = compute_permutation_importance(
+        model,
+        df,
+        "target",
+        feature_names,
+        metric_fn,
+        use_predict_proba=True,
+        n_repeats=5,
+    )
+    assert importance_1.shape == (8,)
+    assert importance_5.shape == (8,)
+    # n_repeats=1 has no spread to measure -- std must be exactly 0.
+    assert (std_1 == 0).all()
+    # n_repeats=5 averages over 5 distinct shuffles, so results should
+    # generally differ from the single-shuffle case.
+    assert not np.allclose(importance_1, importance_5)
+
+
+def test_permutation_importance_std_shape_and_non_negative(fitted_regression_model):
+    model, df, feature_names = fitted_regression_model
+    metric_fn = get_metric_fn("regression")
+    importance, importance_std = compute_permutation_importance(
+        model, df, "target", feature_names, metric_fn, n_repeats=5
+    )
+    assert importance.shape == (8,)
+    assert importance_std.shape == (8,)
+    assert (importance_std >= 0).all()
 
 
 def test_mutual_information_binary_shape(fitted_binary_model):

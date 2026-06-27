@@ -371,7 +371,11 @@ class FeatureSelectionPipeline:
 
         Returns:
             DataFrame with columns: feature_name, shap_importance,
-            permutation_importance, mutual_info_score, recommendation, reason.
+            permutation_importance, permutation_importance_std,
+            mutual_info_score, recommendation, reason.
+            permutation_importance is the mean score drop across
+            config.n_permutations shuffles per feature; permutation_importance_std
+            is the standard deviation across those shuffles (a stability signal).
             recommendation is "Drop", "Caution", or "Keep".
             reason is a plain English explanation (empty string if "Keep").
             Sorted by shap_importance descending.
@@ -418,7 +422,9 @@ class FeatureSelectionPipeline:
             best_params = self.tune_hyperparams()
         self.train_model(best_params)
 
-        metric_fn = get_metric_fn(self.config.task)
+        metric_fn = get_metric_fn(
+            self.config.task, override=self.config.permutation_metric
+        )
 
         shap_importance = compute_shap_importance(
             model=self.model,
@@ -426,13 +432,14 @@ class FeatureSelectionPipeline:
             feature_names=self.feature_names,
         )
 
-        perm_importance = compute_permutation_importance(
+        perm_importance, perm_importance_std = compute_permutation_importance(
             model=self.model,
             data=self.test_data,
             target_column=self.config.target_column,
             feature_names=self.feature_names,
             metric_fn=metric_fn,
             use_predict_proba=(self.config.task == "binary"),
+            n_repeats=self.config.n_permutations,
         )
 
         mi_score = compute_mutual_information(
@@ -492,18 +499,27 @@ class FeatureSelectionPipeline:
         reasons = []
         for i, feature in enumerate(self.feature_names):
             lk_warnings = leakage_warnings[feature]
-            lk_text = " | ".join(lk_warnings) if lk_warnings else ""
             residual_note = residual_notes.get(feature, "")
 
-            if is_harmful[i] and lk_text:
+            if is_harmful[i] and lk_warnings:
                 recommendation = "Drop"
-                reason = harm_reasons[i] + " Also: " + lk_text
+                all_reasons = [harm_reasons[i], *lk_warnings]
+                numbered = " ".join(
+                    f"({j}) {r}" for j, r in enumerate(all_reasons, start=1)
+                )
+                reason = f"{len(all_reasons)} issues found — " + numbered
             elif is_harmful[i]:
                 recommendation = "Drop"
                 reason = harm_reasons[i]
-            elif lk_text:
+            elif lk_warnings:
                 recommendation = "Caution"
-                reason = lk_text
+                if len(lk_warnings) > 1:
+                    numbered = " ".join(
+                        f"({j}) {r}" for j, r in enumerate(lk_warnings, start=1)
+                    )
+                    reason = f"{len(lk_warnings)} issues found — " + numbered
+                else:
+                    reason = lk_warnings[0]
             else:
                 recommendation = "Keep"
                 reason = ""
@@ -533,6 +549,7 @@ class FeatureSelectionPipeline:
             "feature_name": self.feature_names,
             "shap_importance": shap_importance,
             "permutation_importance": perm_importance,
+            "permutation_importance_std": perm_importance_std,
             "mutual_info_score": mi_score,
             "recommendation": recommendations,
             "reason": reasons,
