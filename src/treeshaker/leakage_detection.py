@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
+from sklearn.linear_model import LinearRegression
 
 
 @dataclass
@@ -25,12 +26,18 @@ class LeakageConfig:
             correlation with any other feature exceeds this value.
             Near-duplicate features add redundancy without extra signal.
             Default 0.98.
+        vif_threshold: Flag a feature if its Variance Inflation Factor
+            (VIF) exceeds this value. A high VIF means the feature is
+            well-predicted by a linear combination of the other features,
+            indicating multicollinearity that pairwise correlation alone
+            can miss. Default 10.0.
     """
 
     target_corr_threshold: float = 0.95
     dominant_shap_fraction: float = 0.7
     near_constant_threshold: float = 0.99
     near_duplicate_corr_threshold: float = 0.98
+    vif_threshold: float = 10.0
 
 
 # Column name patterns that suggest identifiers or future-leaking columns.
@@ -54,7 +61,7 @@ class LeakageDetector:
     """
     Detect features that may be causing data leakage or are logically suspect.
 
-    Runs four independent checks against each feature:
+    Runs six independent checks against each feature:
 
     - **Target correlation**: A feature that is almost perfectly correlated
       with the target may have been derived from it, which would be leakage.
@@ -65,6 +72,9 @@ class LeakageDetector:
       value carries no signal and wastes model capacity.
     - **Near-duplicate features**: Features that are nearly identical to
       another feature add redundancy without extra predictive value.
+    - **Multicollinearity (VIF)**: Features that can be predicted almost
+      perfectly by a linear combination of the *other* features are
+      redundant even when no single pairwise correlation looks extreme.
     - **Suspicious names**: Column names matching common patterns for
       identifiers or future-leaking columns are flagged as a soft warning.
 
@@ -104,6 +114,7 @@ class LeakageDetector:
         self._check_dominant_shap(feature_names, shap_importance, warnings)
         self._check_near_constant(df, feature_names, warnings)
         self._check_near_duplicates(df, feature_names, warnings)
+        self._check_multicollinearity(df, feature_names, warnings)
         self._check_suspicious_names(feature_names, target_column, warnings)
 
         return warnings
@@ -203,6 +214,65 @@ class LeakageDetector:
                         f" {corr_val:.2f}). Keeping both adds redundancy"
                         f" without extra signal — consider dropping one."
                     )
+
+    def _check_multicollinearity(
+        self,
+        df: pd.DataFrame,
+        feature_names: list[str],
+        warnings: dict[str, list[str]],
+    ) -> None:
+        """Flag features with high Variance Inflation Factor (VIF).
+
+        VIF for feature i is 1 / (1 - R^2), where R^2 comes from
+        regressing feature i on all other numeric features. A high VIF
+        means a feature is well-predicted by a linear combination of the
+        others — multicollinearity that pairwise correlation alone can
+        miss (e.g. three features that are each only moderately
+        correlated pairwise but are jointly a near-linear combination of
+        each other).
+        """
+        numeric_features = [
+            name for name in feature_names if pd.api.types.is_numeric_dtype(df[name])
+        ]
+        if len(numeric_features) < 2:
+            return
+
+        numeric_df = df[numeric_features].dropna()
+        if len(numeric_df) < 2:
+            return
+
+        for name in numeric_features:
+            others = [other for other in numeric_features if other != name]
+            y = numeric_df[name].to_numpy()
+            x = numeric_df[others].to_numpy()
+
+            if np.allclose(y, y[0]):
+                # Constant column: R^2 is undefined; near-constant check
+                # already covers this case, so skip here.
+                continue
+
+            model = LinearRegression()
+            model.fit(x, y)
+            r_squared = model.score(x, y)
+
+            # Clamp to avoid floating point noise pushing slightly above 1
+            # or below 0, and guard against division by zero on perfect
+            # collinearity.
+            r_squared = min(max(r_squared, 0.0), 1.0)
+            if r_squared >= 1.0 - 1e-10:
+                vif = float("inf")
+            else:
+                vif = 1.0 / (1.0 - r_squared)
+
+            if vif >= self.config.vif_threshold:
+                vif_str = "infinite" if np.isinf(vif) else f"{vif:.1f}"
+                warnings[name].append(
+                    f"High multicollinearity (VIF={vif_str}). This feature"
+                    f" can be closely reconstructed from a combination of"
+                    f" the other features, which is redundancy that"
+                    f" pairwise correlation alone can miss — consider"
+                    f" dropping it or one of the features it overlaps with."
+                )
 
     def _check_suspicious_names(
         self,

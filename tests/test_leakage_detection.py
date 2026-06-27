@@ -131,6 +131,79 @@ def test_returns_all_features(detector, clean_df):
     assert set(warnings.keys()) == set(feature_names)
 
 
+def test_multicollinearity_flagged():
+    """Three features that are jointly redundant but only moderately
+    correlated pairwise should be flagged by VIF even though pairwise
+    correlation would miss them."""
+    rng = np.random.default_rng(42)
+    n = 300
+    a = rng.normal(0, 1, n)
+    b = rng.normal(0, 1, n)
+    # c is a near-perfect linear combination of a and b.
+    c = a + b + rng.normal(0, 0.001, n)
+    df = pd.DataFrame(
+        {
+            "feat_a": a,
+            "feat_b": b,
+            "feat_c": c,
+            "target": rng.integers(0, 2, n).astype(float),
+        }
+    )
+    detector = LeakageDetector(LeakageConfig(vif_threshold=10.0))
+    shap = np.array([0.3, 0.3, 0.3])
+    warnings = detector.detect(df, "target", ["feat_a", "feat_b", "feat_c"], shap)
+    assert len(warnings["feat_c"]) > 0
+    assert "multicollinearity" in warnings["feat_c"][0].lower()
+    assert "vif" in warnings["feat_c"][0].lower()
+
+
+def test_multicollinearity_not_flagged_on_independent_features(detector, clean_df):
+    """Independent features should not trigger the VIF check."""
+    shap = np.array([0.3, 0.2, 0.1])
+    warnings = detector.detect(
+        clean_df, "target", ["feature_a", "feature_b", "feature_c"], shap
+    )
+    for name in ["feature_a", "feature_b", "feature_c"]:
+        assert not any("vif" in w.lower() for w in warnings[name])
+
+
+def test_multicollinearity_skipped_with_fewer_than_two_numeric_features(detector):
+    """With fewer than two numeric features, the VIF check should be a no-op."""
+    df = pd.DataFrame(
+        {
+            "feature_a": np.random.default_rng(42).normal(0, 1, 50),
+            "category": ["x"] * 25 + ["y"] * 25,
+            "target": np.random.default_rng(1).integers(0, 2, 50).astype(float),
+        }
+    )
+    shap = np.array([0.5, 0.5])
+    warnings = detector.detect(df, "target", ["feature_a", "category"], shap)
+    assert all(len(v) == 0 for v in warnings.values())
+
+
+def test_multicollinearity_handles_perfect_collinearity():
+    """Perfect collinearity (R^2 == 1) should be flagged without a
+    division-by-zero error, reporting an infinite VIF."""
+    rng = np.random.default_rng(42)
+    n = 100
+    a = rng.normal(0, 1, n)
+    b = rng.normal(0, 1, n)
+    c = a + b  # Exactly linearly dependent, no noise.
+    df = pd.DataFrame(
+        {
+            "feat_a": a,
+            "feat_b": b,
+            "feat_c": c,
+            "target": rng.integers(0, 2, n).astype(float),
+        }
+    )
+    detector = LeakageDetector(LeakageConfig(vif_threshold=10.0))
+    shap = np.array([0.3, 0.3, 0.3])
+    warnings = detector.detect(df, "target", ["feat_a", "feat_b", "feat_c"], shap)
+    assert len(warnings["feat_c"]) > 0
+    assert "infinite" in warnings["feat_c"][0].lower()
+
+
 def test_custom_thresholds():
     rng = np.random.default_rng(42)
     base = rng.normal(0, 1, 200)

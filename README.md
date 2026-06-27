@@ -10,7 +10,7 @@ Automated feature selection using XGBoost, SHAP, and Optuna. Give it a CSV and a
 ## Why TreeShaker?
 
 - **Fast feature ranking** — SHAP + permutation importance to identify harmful features
-- **Leakage detection** — catches suspicious patterns: high target correlation, SHAP dominance, near-duplicates, suspicious column names
+- **Leakage detection** — catches suspicious patterns: high target correlation, SHAP dominance, near-duplicates, multicollinearity (VIF), suspicious column names
 - **Three output formats** — CSV results, HTML reports, or Python API
 - **Automated thresholds** — sensible defaults, fully customizable
 - **Plain-English explanations** — each feature gets a Drop/Caution/Keep recommendation with reasoning
@@ -203,7 +203,7 @@ Both thresholds are configurable. Raise them to be more aggressive about flaggin
 
 ## Leakage detection
 
-Five independent checks flag features that may be causing data leakage or are otherwise logically suspect. A feature can trigger more than one.
+Six independent checks flag features that may be causing data leakage or are otherwise logically suspect. A feature can trigger more than one.
 
 | Check | Trigger | Why it matters |
 |---|---|---|
@@ -211,9 +211,10 @@ Five independent checks flag features that may be causing data leakage or are ot
 | SHAP dominance | One feature accounts for ≥ `--dominant-shap-fraction` (default `0.7`) of total SHAP | A single feature this dominant may leak future/target info |
 | Near-constant | Same value in > 99% of rows | No signal, wastes model capacity |
 | Near-duplicate | Correlation ≥ 0.98 with another feature | Redundant — adds no extra signal |
+| Multicollinearity (VIF) | Variance Inflation Factor ≥ `vif_threshold` (default `10.0`) | Feature is a near-linear combination of *other* features — redundancy pairwise correlation alone can miss |
 | Suspicious names | Matches patterns like `_id`, `future_`, `label`, `target` | Likely an identifier or future-leaking column |
 
-Leakage warnings produce a `Caution` recommendation on their own; combined with harm detection they escalate to `Drop`. Disable all five checks with `--skip-leakage-check`.
+Leakage warnings produce a `Caution` recommendation on their own; combined with harm detection they escalate to `Drop`. Disable all six checks with `--skip-leakage-check`.
 
 ## Development
 
