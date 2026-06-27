@@ -30,6 +30,7 @@ def test_pipeline_binary_run(binary_csv, tmp_path):
         "feature_name",
         "shap_importance",
         "permutation_importance",
+        "permutation_importance_std",
         "mutual_info_score",
         "recommendation",
         "reason",
@@ -134,6 +135,7 @@ def test_no_groups_by_default(binary_csv, tmp_path):
         "feature_name",
         "shap_importance",
         "permutation_importance",
+        "permutation_importance_std",
         "mutual_info_score",
         "recommendation",
         "reason",
@@ -157,6 +159,7 @@ def test_explicit_feature_groups(binary_csv, tmp_path):
         "feature_name",
         "shap_importance",
         "permutation_importance",
+        "permutation_importance_std",
         "mutual_info_score",
         "recommendation",
         "reason",
@@ -241,6 +244,7 @@ def test_pipeline_no_bootstrap_by_default(binary_csv, tmp_path):
         "feature_name",
         "shap_importance",
         "permutation_importance",
+        "permutation_importance_std",
         "mutual_info_score",
         "recommendation",
         "reason",
@@ -268,6 +272,7 @@ def test_pipeline_bootstrap_adds_columns(binary_csv, tmp_path):
         "feature_name",
         "shap_importance",
         "permutation_importance",
+        "permutation_importance_std",
         "mutual_info_score",
         "recommendation",
         "reason",
@@ -323,6 +328,7 @@ def test_pipeline_skip_tuning_runs_without_optuna(binary_csv, tmp_path):
         "feature_name",
         "shap_importance",
         "permutation_importance",
+        "permutation_importance_std",
         "mutual_info_score",
         "recommendation",
         "reason",
@@ -347,3 +353,56 @@ def test_pipeline_skip_tuning_uses_configured_xgboost_params(binary_csv, tmp_pat
 
     assert pipeline.model.get_params()["max_depth"] == 3
     assert pipeline.model.get_params()["n_estimators"] == 5
+
+
+def test_pipeline_n_permutations_default_is_5(binary_csv, tmp_path):
+    config = make_fast_config(binary_csv, "binary", tmp_path)
+    assert config.n_permutations == 5
+
+
+def test_pipeline_n_permutations_custom_value_wired_through(binary_csv, tmp_path):
+    """A custom n_permutations should reach compute_permutation_importance
+    and still produce a valid results frame with the std column."""
+    config = make_fast_config(binary_csv, "binary", tmp_path)
+    config.n_permutations = 2
+    results = FeatureSelectionPipeline(config).run()
+    assert "permutation_importance_std" in results.columns
+    assert (results["permutation_importance_std"] >= 0).all()
+
+
+def test_pipeline_permutation_metric_default_is_none(binary_csv, tmp_path):
+    config = make_fast_config(binary_csv, "binary", tmp_path)
+    assert config.permutation_metric is None
+
+
+def test_pipeline_permutation_metric_wape_for_regression(regression_csv, tmp_path):
+    """An explicit wape override should run end-to-end without error."""
+    config = make_fast_config(regression_csv, "regression", tmp_path)
+    config.permutation_metric = "wape"
+    results = FeatureSelectionPipeline(config).run()
+    assert len(results) == 20
+    assert "permutation_importance_std" in results.columns
+
+
+def test_config_invalid_permutation_metric_raises():
+    from treeshaker.exceptions import ConfigError
+
+    with pytest.raises(ConfigError, match="permutation_metric"):
+        Config(
+            input_file="f.csv",
+            target_column="y",
+            task="binary",
+            permutation_metric="not_a_metric",
+        )
+
+
+def test_config_invalid_n_permutations_raises():
+    from treeshaker.exceptions import ConfigError
+
+    with pytest.raises(ConfigError, match="n_permutations"):
+        Config(
+            input_file="f.csv",
+            target_column="y",
+            task="binary",
+            n_permutations=0,
+        )

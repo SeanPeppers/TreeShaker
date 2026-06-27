@@ -139,12 +139,18 @@ def compute_permutation_importance(
     feature_names: list[str],
     metric_fn: Callable[[np.ndarray, np.ndarray], float],
     use_predict_proba: bool = False,
-) -> np.ndarray:
+    n_repeats: int = 5,
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Compute permutation importance for each feature.
 
-    For each feature, shuffles its values and measures the drop in model
-    performance. A larger drop means the feature is more important.
+    For each feature, shuffles its values `n_repeats` times and measures
+    the drop in model performance each time. A larger mean drop means the
+    feature is more important. Averaging over multiple shuffles (rather
+    than a single shuffle) reduces noise from any one unlucky/lucky
+    permutation -- this matches the standard convention used by, e.g.,
+    sklearn's own `permutation_importance`, which also defaults to 5
+    repeats.
 
     Args:
         model: A fitted XGBoost model (XGBClassifier or XGBRegressor).
@@ -158,12 +164,21 @@ def compute_permutation_importance(
             instead of model.predict(X). This is required for metrics
             such as roc_auc_score that expect scores/probabilities
             rather than hard class labels. Defaults to False.
+        n_repeats: Number of independent shuffles per feature. The score
+            drop is averaged across repeats. Each repeat uses its own
+            deterministic seed (derived from the per-feature seed and the
+            repeat index), so results remain fully reproducible for a
+            given n_repeats. Defaults to 5.
 
     Returns:
-        Array of shape (n_features,) with permutation importance per feature.
-        Positive values mean removing the feature hurts performance.
+        A tuple (importances, importances_std), each of shape
+        (n_features,). `importances` is the mean permutation importance
+        per feature across the n_repeats shuffles; positive values mean
+        removing the feature hurts performance. `importances_std` is the
+        standard deviation of the per-repeat score drops, a stability
+        signal (higher means the importance estimate is noisier).
     """
-    logger.info("Computing permutation importance")
+    logger.info(f"Computing permutation importance (n_repeats={n_repeats})")
     X = data[feature_names].copy()
     y = np.asarray(data[target_column].values)
 
@@ -171,17 +186,25 @@ def compute_permutation_importance(
     baseline_score = metric_fn(y, baseline_preds)
 
     importances = np.zeros(len(feature_names))
+    importances_std = np.zeros(len(feature_names))
     for i, feature in enumerate(feature_names):
-        X_shuffled = X.copy()
-        # A distinct but deterministic seed per feature keeps results
-        # reproducible while still shuffling each column differently.
-        rng = np.random.default_rng(seed=42 + i)
-        X_shuffled[feature] = rng.permutation(np.asarray(X_shuffled[feature].values))
-        shuffled_preds = _get_predictions(model, X_shuffled, use_predict_proba)
-        shuffled_score = metric_fn(y, shuffled_preds)
-        importances[i] = baseline_score - shuffled_score
+        repeat_drops = np.zeros(n_repeats)
+        for r in range(n_repeats):
+            X_shuffled = X.copy()
+            # A distinct but deterministic seed per feature and repeat
+            # keeps results reproducible while still shuffling each
+            # column differently across both features and repeats.
+            rng = np.random.default_rng(seed=42 + i * n_repeats + r)
+            X_shuffled[feature] = rng.permutation(
+                np.asarray(X_shuffled[feature].values)
+            )
+            shuffled_preds = _get_predictions(model, X_shuffled, use_predict_proba)
+            shuffled_score = metric_fn(y, shuffled_preds)
+            repeat_drops[r] = baseline_score - shuffled_score
+        importances[i] = repeat_drops.mean()
+        importances_std[i] = repeat_drops.std()
 
-    return importances
+    return importances, importances_std
 
 
 def compute_mutual_information(

@@ -1,10 +1,17 @@
 """Tests for utility functions in utils.py."""
 
+import numpy as np
 import pandas as pd
 import pytest
 
 from treeshaker.exceptions import ValidationError
-from treeshaker.utils import check_class_imbalance, load_csv, validate_target
+from treeshaker.utils import (
+    check_class_imbalance,
+    compute_wape,
+    get_metric_fn,
+    load_csv,
+    validate_target,
+)
 
 
 def test_balanced_binary_returns_none():
@@ -175,6 +182,79 @@ def test_load_csv_three_way_split_stratification_binary(tmp_path):
     for split in (train_df, val_df, test_df):
         minority_frac = split["target"].value_counts(normalize=True).min()
         assert minority_frac == pytest.approx(1 / 3, abs=0.05)
+
+
+def test_compute_wape_known_value():
+    y_true = np.array([10, 20, 30, 40])
+    y_pred = np.array([12, 18, 33, 36])
+    # abs errors: 2, 2, 3, 4 = 11; sum abs actual = 100
+    expected = 11 / 100
+    assert compute_wape(y_true, y_pred) == pytest.approx(expected)
+
+
+def test_compute_wape_perfect_forecast_is_zero():
+    y_true = np.array([5, 10, 15])
+    assert compute_wape(y_true, y_true) == pytest.approx(0.0)
+
+
+def test_compute_wape_zero_actuals_raises():
+    y_true = np.array([0, 0, 0])
+    y_pred = np.array([1, 2, 3])
+    with pytest.raises(ValidationError, match="WAPE is undefined"):
+        compute_wape(y_true, y_pred)
+
+
+def test_get_metric_fn_binary_default_is_roc_auc():
+    fn = get_metric_fn("binary")
+    y_true = [0, 1, 0, 1]
+    y_pred = [0.1, 0.9, 0.2, 0.8]
+    assert fn(y_true, y_pred) == pytest.approx(1.0)
+
+
+def test_get_metric_fn_multiclass_default_is_accuracy():
+    fn = get_metric_fn("multiclass")
+    assert fn([0, 1, 2], [0, 1, 2]) == pytest.approx(1.0)
+
+
+def test_get_metric_fn_regression_default_is_neg_mse():
+    fn = get_metric_fn("regression")
+    y_true = [1.0, 2.0, 3.0]
+    assert fn(y_true, y_true) == pytest.approx(0.0)
+
+
+def test_get_metric_fn_override_roc_auc():
+    fn = get_metric_fn("regression", override="roc_auc")
+    y_true = [0, 1, 0, 1]
+    y_pred = [0.1, 0.9, 0.2, 0.8]
+    assert fn(y_true, y_pred) == pytest.approx(1.0)
+
+
+def test_get_metric_fn_override_accuracy():
+    fn = get_metric_fn("regression", override="accuracy")
+    assert fn([0, 1, 1], [0, 1, 1]) == pytest.approx(1.0)
+
+
+def test_get_metric_fn_override_neg_mse():
+    fn = get_metric_fn("binary", override="neg_mse")
+    y_true = [1.0, 2.0, 3.0]
+    assert fn(y_true, y_true) == pytest.approx(0.0)
+
+
+def test_get_metric_fn_override_wape_is_negative_for_higher_is_better():
+    """The generic metric_fn contract is 'higher is better', so the WAPE
+    override must return -wape, matching the neg_mse pattern."""
+    fn = get_metric_fn("regression", override="wape")
+    y_true = np.array([10, 20, 30, 40])
+    y_pred = np.array([12, 18, 33, 36])
+    expected = -compute_wape(y_true, y_pred)
+    assert fn(y_true, y_pred) == pytest.approx(expected)
+    # Perfect forecast scores 0, the maximum possible (since wape >= 0).
+    assert fn(y_true, y_true) == pytest.approx(0.0)
+
+
+def test_get_metric_fn_invalid_override_raises():
+    with pytest.raises(ValueError, match="Unknown permutation metric override"):
+        get_metric_fn("regression", override="not_a_metric")
 
 
 def test_load_csv_three_way_split_stratification_multiclass(tmp_path):

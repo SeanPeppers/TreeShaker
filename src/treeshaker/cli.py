@@ -8,6 +8,7 @@ from .config import BootstrapConfig, Config, OptunaConfig, XGBoostConfig
 from .exceptions import ConfigError, TreeShakerError
 from .leakage_detection import LeakageConfig
 from .pipeline import FeatureSelectionPipeline
+from .utils import VALID_PERMUTATION_METRICS
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -163,6 +164,29 @@ def parse_arguments() -> argparse.Namespace:
         default=42,
         help="Random seed for reproducibility. (default: 42)",
     )
+    parser.add_argument(
+        "--n-permutations",
+        type=int,
+        default=5,
+        help="Number of shuffles per feature for permutation importance,"
+        " averaged to reduce single-shuffle noise. A single shuffle can"
+        " give a misleadingly high or low importance just from one"
+        " unlucky/lucky permutation, especially on smaller datasets."
+        " (default: 5, matching sklearn's own permutation_importance"
+        " default)",
+    )
+    parser.add_argument(
+        "--permutation-metric",
+        default=None,
+        choices=sorted(VALID_PERMUTATION_METRICS),
+        help="Override the metric used for permutation importance only"
+        " (does not affect Optuna tuning). One of"
+        f" {sorted(VALID_PERMUTATION_METRICS)}. 'wape' (Weighted Absolute"
+        " Percentage Error) is useful for volume/demand forecasting use"
+        " cases. Unset (default) uses the automatic per-task default:"
+        " roc_auc for binary, accuracy for multiclass, neg_mse for"
+        " regression.",
+    )
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging.")
     return parser.parse_args()
 
@@ -228,6 +252,8 @@ def main() -> int:
             imbalance_warning_threshold=args.imbalance_threshold,
             verbose=args.verbose,
             skip_tuning=args.skip_tuning,
+            n_permutations=args.n_permutations,
+            permutation_metric=args.permutation_metric,
         )
     except ConfigError as exc:
         logger.error(f"Configuration error: {exc}")
