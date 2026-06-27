@@ -51,6 +51,15 @@ def parse_arguments() -> argparse.Namespace:
         help="Custom XGBoost params as a JSON string. (default: {})",
     )
     parser.add_argument(
+        "--device",
+        default="auto",
+        choices=["auto", "cuda", "cpu"],
+        help="Device XGBoost trains on. 'auto' (default) automatically uses"
+        " a CUDA GPU when one is usable, falling back to CPU otherwise."
+        " 'cuda' forces GPU and raises an error if no usable GPU is"
+        " detected. 'cpu' forces CPU regardless of GPU availability.",
+    )
+    parser.add_argument(
         "--feature-groups",
         default="{}",
         help="Feature groups as a JSON string mapping group name to a list of"
@@ -291,7 +300,7 @@ def main() -> int:
                 timeout=args.optuna_timeout,
                 seed=args.random_seed,
             ),
-            xgboost_config=XGBoostConfig(extra_params=xgb_params),
+            xgboost_config=XGBoostConfig(device=args.device, extra_params=xgb_params),
             shap_importance_threshold=args.shap_threshold,
             permutation_importance_threshold=args.perm_threshold,
             leakage_config=leakage_config,

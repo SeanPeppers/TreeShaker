@@ -22,6 +22,57 @@ def test_xgboost_config_defaults():
     assert d["learning_rate"] == 0.1
 
 
+def test_xgboost_config_device_defaults_to_auto():
+    cfg = XGBoostConfig()
+    assert cfg.device == "auto"
+
+
+def test_xgboost_config_auto_resolves_to_cuda_when_available(monkeypatch):
+    monkeypatch.setattr("treeshaker.utils.detect_cuda_available", lambda: True)
+    cfg = XGBoostConfig(device="auto")
+    d = cfg.to_dict()
+    assert d["device"] == "cuda"
+
+
+def test_xgboost_config_auto_resolves_to_cpu_when_unavailable(monkeypatch):
+    monkeypatch.setattr("treeshaker.utils.detect_cuda_available", lambda: False)
+    cfg = XGBoostConfig(device="auto")
+    d = cfg.to_dict()
+    assert d["device"] == "cpu"
+
+
+def test_xgboost_config_explicit_cpu_passes_through_regardless_of_detection(
+    monkeypatch,
+):
+    monkeypatch.setattr("treeshaker.utils.detect_cuda_available", lambda: True)
+    cfg = XGBoostConfig(device="cpu")
+    d = cfg.to_dict()
+    assert d["device"] == "cpu"
+
+    monkeypatch.setattr("treeshaker.utils.detect_cuda_available", lambda: False)
+    cfg2 = XGBoostConfig(device="cpu")
+    d2 = cfg2.to_dict()
+    assert d2["device"] == "cpu"
+
+
+def test_xgboost_config_explicit_cuda_succeeds_when_detected(monkeypatch):
+    monkeypatch.setattr("treeshaker.config.detect_cuda_available", lambda: True)
+    cfg = XGBoostConfig(device="cuda")
+    d = cfg.to_dict()
+    assert d["device"] == "cuda"
+
+
+def test_xgboost_config_explicit_cuda_raises_when_unavailable(monkeypatch):
+    monkeypatch.setattr("treeshaker.config.detect_cuda_available", lambda: False)
+    with pytest.raises(ConfigError, match="cuda"):
+        XGBoostConfig(device="cuda")
+
+
+def test_xgboost_config_invalid_device_raises():
+    with pytest.raises(ConfigError, match="device"):
+        XGBoostConfig(device="tpu")
+
+
 def test_optuna_config_defaults():
     cfg = OptunaConfig()
     assert cfg.n_trials == 50
