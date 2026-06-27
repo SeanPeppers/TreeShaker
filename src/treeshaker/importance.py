@@ -1,6 +1,7 @@
 """SHAP and permutation importance computation."""
 
 import logging
+from typing import Any, Callable
 
 import numpy as np
 import pandas as pd
@@ -10,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 def compute_shap_importance(
-    model,
+    model: Any,
     data: pd.DataFrame,
     feature_names: list[str],
 ) -> np.ndarray:
@@ -49,11 +50,11 @@ def compute_shap_importance(
 
 
 def compute_permutation_importance(
-    model,
+    model: Any,
     data: pd.DataFrame,
     target_column: str,
     feature_names: list[str],
-    metric_fn,
+    metric_fn: Callable[[np.ndarray, np.ndarray], float],
 ) -> np.ndarray:
     """
     Compute permutation importance for each feature.
@@ -75,7 +76,7 @@ def compute_permutation_importance(
     """
     logger.info("Computing permutation importance")
     X = data[feature_names].copy()
-    y = data[target_column].values
+    y = np.asarray(data[target_column].values)
 
     baseline_preds = model.predict(X)
     baseline_score = metric_fn(y, baseline_preds)
@@ -83,6 +84,8 @@ def compute_permutation_importance(
     importances = np.zeros(len(feature_names))
     for i, feature in enumerate(feature_names):
         X_shuffled = X.copy()
+        # A distinct but deterministic seed per feature keeps results
+        # reproducible while still shuffling each column differently.
         rng = np.random.default_rng(seed=42 + i)
         X_shuffled[feature] = rng.permutation(np.asarray(X_shuffled[feature].values))
         shuffled_preds = model.predict(X_shuffled)

@@ -117,9 +117,9 @@ class FeatureSelectionPipeline:
                 )
                 model = xgb.XGBClassifier(objective=objective_str, **params)
                 model.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=False)
+                # Binary and multiclass are both scored by log loss on the
+                # predicted class probabilities.
                 preds = model.predict_proba(X_val)
-                if task == "binary":
-                    return log_loss(y_val, preds)
                 return log_loss(y_val, preds)
             else:
                 model = xgb.XGBRegressor(**params)

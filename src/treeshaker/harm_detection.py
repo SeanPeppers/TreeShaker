@@ -75,9 +75,9 @@ class HarmDetector:
                 harm_reasons.append(reason)
             elif low_perm:
                 reason = (
-                    "Shuffling this feature does not affect model "
-                    "performance, meaning the model is not using it in "
-                    "practice."
+                    "Shuffling this feature barely changes model performance "
+                    f"(permutation importance: {perm_importance[i]:.3f}), "
+                    "meaning the model is not really using it."
                 )
                 is_harmful[i] = True
                 harm_reasons.append(reason)

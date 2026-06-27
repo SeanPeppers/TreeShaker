@@ -1,5 +1,6 @@
 """Command-line interface for TreeShaker."""
 
+import argparse
 import json
 import logging
 
@@ -9,14 +10,13 @@ from .leakage_detection import LeakageConfig
 from .pipeline import FeatureSelectionPipeline
 
 
-def parse_arguments():
+def parse_arguments() -> argparse.Namespace:
     """
     Parse command-line arguments for TreeShaker.
 
     Returns:
         argparse.Namespace with all parsed arguments.
     """
-    import argparse
 
     parser = argparse.ArgumentParser(
         prog="treeshaker",
