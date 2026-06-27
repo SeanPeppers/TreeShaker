@@ -5,6 +5,8 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 import pytest
+from conftest import BASE_RESULT_COLUMNS
+from conftest import make_config as make_fast_config
 
 from treeshaker.config import BootstrapConfig, Config, OptunaConfig, XGBoostConfig
 from treeshaker.pipeline import FeatureSelectionPipeline
@@ -12,32 +14,12 @@ from treeshaker.residual_diagnostics import ResidualConfig
 from treeshaker.synthetic_features import SyntheticConfig, SyntheticFeatureSuggestion
 
 
-def make_fast_config(input_file, task, tmp_path):
-    """Return a Config set up for fast test runs (5 Optuna trials)."""
-    return Config(
-        input_file=input_file,
-        target_column="target",
-        task=task,
-        output_file=str(tmp_path / "results.csv"),
-        output_format="csv",
-        optuna_config=OptunaConfig(n_trials=5, timeout=60),
-    )
-
-
 def test_pipeline_binary_run(binary_csv, tmp_path):
     config = make_fast_config(binary_csv, "binary", tmp_path)
     pipeline = FeatureSelectionPipeline(config)
     results = pipeline.run()
     assert isinstance(results, pd.DataFrame)
-    assert set(results.columns) == {
-        "feature_name",
-        "shap_importance",
-        "permutation_importance",
-        "permutation_importance_std",
-        "mutual_info_score",
-        "recommendation",
-        "reason",
-    }
+    assert set(results.columns) == BASE_RESULT_COLUMNS
     assert len(results) == 10
 
 
@@ -85,10 +67,10 @@ def test_pipeline_recommendation_values(binary_csv, tmp_path):
 
 def test_pipeline_saves_csv(binary_csv, tmp_path):
     output = tmp_path / "out.csv"
-    config = Config(
-        input_file=binary_csv,
-        target_column="target",
-        task="binary",
+    config = make_fast_config(
+        binary_csv,
+        "binary",
+        tmp_path,
         output_file=str(output),
         optuna_config=OptunaConfig(n_trials=3, timeout=30),
     )
@@ -101,10 +83,10 @@ def test_pipeline_saves_csv(binary_csv, tmp_path):
 
 def test_pipeline_saves_html(binary_csv, tmp_path):
     output = tmp_path / "report.html"
-    config = Config(
-        input_file=binary_csv,
-        target_column="target",
-        task="binary",
+    config = make_fast_config(
+        binary_csv,
+        "binary",
+        tmp_path,
         output_file=str(output),
         output_format="html",
         optuna_config=OptunaConfig(n_trials=3, timeout=30),
@@ -134,15 +116,7 @@ def test_no_groups_by_default(binary_csv, tmp_path):
     config = make_fast_config(binary_csv, "binary", tmp_path)
     pipeline = FeatureSelectionPipeline(config)
     results = pipeline.run()
-    assert set(results.columns) == {
-        "feature_name",
-        "shap_importance",
-        "permutation_importance",
-        "permutation_importance_std",
-        "mutual_info_score",
-        "recommendation",
-        "reason",
-    }
+    assert set(results.columns) == BASE_RESULT_COLUMNS
     assert pipeline.group_summary is None
     groups_file = tmp_path / "results_groups.csv"
     assert not groups_file.exists()
@@ -158,15 +132,7 @@ def test_explicit_feature_groups(binary_csv, tmp_path):
     results = pipeline.run()
 
     # Per-feature schema is unchanged.
-    assert set(results.columns) == {
-        "feature_name",
-        "shap_importance",
-        "permutation_importance",
-        "permutation_importance_std",
-        "mutual_info_score",
-        "recommendation",
-        "reason",
-    }
+    assert set(results.columns) == BASE_RESULT_COLUMNS
 
     assert pipeline.group_summary is not None
     summary = pipeline.group_summary
@@ -243,25 +209,15 @@ def test_pipeline_no_bootstrap_by_default(binary_csv, tmp_path):
     config = make_fast_config(binary_csv, "binary", tmp_path)
     assert config.bootstrap_config.n_bootstrap == 0
     results = FeatureSelectionPipeline(config).run()
-    assert set(results.columns) == {
-        "feature_name",
-        "shap_importance",
-        "permutation_importance",
-        "permutation_importance_std",
-        "mutual_info_score",
-        "recommendation",
-        "reason",
-    }
+    assert set(results.columns) == BASE_RESULT_COLUMNS
 
 
 def make_fast_bootstrap_config(input_file, task, tmp_path, n_bootstrap=3):
     """Config with bootstrap importance enabled, kept small/fast for tests."""
-    return Config(
-        input_file=input_file,
-        target_column="target",
-        task=task,
-        output_file=str(tmp_path / "results.csv"),
-        output_format="csv",
+    return make_fast_config(
+        input_file,
+        task,
+        tmp_path,
         optuna_config=OptunaConfig(n_trials=3, timeout=60),
         xgboost_config=XGBoostConfig(max_depth=2, extra_params={"n_estimators": 5}),
         bootstrap_config=BootstrapConfig(n_bootstrap=n_bootstrap),
@@ -271,14 +227,7 @@ def make_fast_bootstrap_config(input_file, task, tmp_path, n_bootstrap=3):
 def test_pipeline_bootstrap_adds_columns(binary_csv, tmp_path):
     config = make_fast_bootstrap_config(binary_csv, "binary", tmp_path)
     results = FeatureSelectionPipeline(config).run()
-    assert set(results.columns) == {
-        "feature_name",
-        "shap_importance",
-        "permutation_importance",
-        "permutation_importance_std",
-        "mutual_info_score",
-        "recommendation",
-        "reason",
+    assert set(results.columns) == BASE_RESULT_COLUMNS | {
         "shap_importance_mean",
         "shap_importance_std",
     }
@@ -311,12 +260,10 @@ def test_skip_tuning_off_by_default(binary_csv, tmp_path):
 
 def test_pipeline_skip_tuning_runs_without_optuna(binary_csv, tmp_path):
     """With skip_tuning=True, the pipeline completes and never calls Optuna."""
-    config = Config(
-        input_file=binary_csv,
-        target_column="target",
-        task="binary",
-        output_file=str(tmp_path / "results.csv"),
-        output_format="csv",
+    config = make_fast_config(
+        binary_csv,
+        "binary",
+        tmp_path,
         xgboost_config=XGBoostConfig(max_depth=2, extra_params={"n_estimators": 5}),
         skip_tuning=True,
     )
@@ -327,29 +274,15 @@ def test_pipeline_skip_tuning_runs_without_optuna(binary_csv, tmp_path):
 
     mock_create_study.assert_not_called()
     assert isinstance(results, pd.DataFrame)
-    assert set(results.columns) == {
-        "feature_name",
-        "shap_importance",
-        "permutation_importance",
-        "permutation_importance_std",
-        "mutual_info_score",
-        "recommendation",
-        "reason",
-    }
+    assert set(results.columns) == BASE_RESULT_COLUMNS
     assert len(results) == 10
 
 
 def test_pipeline_skip_tuning_uses_configured_xgboost_params(binary_csv, tmp_path):
     """skip_tuning trains directly from XGBoostConfig, not Optuna's best_params."""
     xgb_cfg = XGBoostConfig(max_depth=3, extra_params={"n_estimators": 5})
-    config = Config(
-        input_file=binary_csv,
-        target_column="target",
-        task="binary",
-        output_file=str(tmp_path / "results.csv"),
-        output_format="csv",
-        xgboost_config=xgb_cfg,
-        skip_tuning=True,
+    config = make_fast_config(
+        binary_csv, "binary", tmp_path, xgboost_config=xgb_cfg, skip_tuning=True
     )
     pipeline = FeatureSelectionPipeline(config)
     pipeline.run()
@@ -363,29 +296,12 @@ def test_check_residuals_off_by_default(binary_csv, tmp_path):
     config = make_fast_config(binary_csv, "binary", tmp_path)
     assert config.check_residuals is False
     results = FeatureSelectionPipeline(config).run()
-    assert set(results.columns) == {
-        "feature_name",
-        "shap_importance",
-        "permutation_importance",
-        "permutation_importance_std",
-        "mutual_info_score",
-        "recommendation",
-        "reason",
-    }
+    assert set(results.columns) == BASE_RESULT_COLUMNS
 
 
 def make_fast_residual_config(input_file, task, tmp_path, **kwargs):
     """Config with residual diagnostics enabled, kept small/fast for tests."""
-    return Config(
-        input_file=input_file,
-        target_column="target",
-        task=task,
-        output_file=str(tmp_path / "results.csv"),
-        output_format="csv",
-        optuna_config=OptunaConfig(n_trials=5, timeout=60),
-        check_residuals=True,
-        **kwargs,
-    )
+    return make_fast_config(input_file, task, tmp_path, check_residuals=True, **kwargs)
 
 
 def test_check_residuals_adds_column_binary(binary_csv, tmp_path):
@@ -435,15 +351,12 @@ def test_residual_correlation_detects_constructed_feature(tmp_path):
     path = tmp_path / "constructed.csv"
     df.to_csv(path, index=False)
 
-    config = Config(
-        input_file=str(path),
-        target_column="target",
-        task="regression",
-        output_file=str(tmp_path / "results.csv"),
-        output_format="csv",
+    config = make_fast_residual_config(
+        str(path),
+        "regression",
+        tmp_path,
         xgboost_config=XGBoostConfig(max_depth=1, extra_params={"n_estimators": 1}),
         skip_tuning=True,
-        check_residuals=True,
         residual_config=ResidualConfig(residual_corr_threshold=0.3),
     )
     results = FeatureSelectionPipeline(config).run()
@@ -481,15 +394,12 @@ def test_residual_note_downgrades_drop_to_caution(tmp_path):
     path = tmp_path / "constructed_drop.csv"
     df.to_csv(path, index=False)
 
-    config = Config(
-        input_file=str(path),
-        target_column="target",
-        task="regression",
-        output_file=str(tmp_path / "results.csv"),
-        output_format="csv",
+    config = make_fast_residual_config(
+        str(path),
+        "regression",
+        tmp_path,
         xgboost_config=XGBoostConfig(max_depth=1, extra_params={"n_estimators": 1}),
         skip_tuning=True,
-        check_residuals=True,
         residual_config=ResidualConfig(residual_corr_threshold=0.3),
         # Push the harm thresholds high so feature_1 (under-used by the
         # shallow model) gets flagged Drop by SHAP/permutation alone.
@@ -568,15 +478,7 @@ def test_pipeline_synthesis_disabled_by_default(regression_csv, tmp_path):
     assert pipeline.suggested_features is None
     assert pipeline.interactions is None
     assert not (tmp_path / "results_suggested_features.csv").exists()
-    assert set(results.columns) == {
-        "feature_name",
-        "shap_importance",
-        "permutation_importance",
-        "permutation_importance_std",
-        "mutual_info_score",
-        "recommendation",
-        "reason",
-    }
+    assert set(results.columns) == BASE_RESULT_COLUMNS
 
 
 def test_pipeline_synthesis_requires_interactions_warns_and_noops(
@@ -618,11 +520,10 @@ def test_pipeline_synthesis_enabled_surfaces_candidate(tmp_path):
     input_csv = tmp_path / "crossing.csv"
     df.to_csv(input_csv, index=False)
 
-    config = Config(
-        input_file=str(input_csv),
-        target_column="target",
-        task="regression",
-        output_file=str(tmp_path / "results.csv"),
+    config = make_fast_config(
+        str(input_csv),
+        "regression",
+        tmp_path,
         skip_tuning=True,
         compute_shap_interactions=True,
         synthetic_config=SyntheticConfig(
@@ -654,11 +555,10 @@ def test_pipeline_synthesis_mi_threshold_filters_weak_candidates(tmp_path):
     input_csv = tmp_path / "crossing.csv"
     df.to_csv(input_csv, index=False)
 
-    config = Config(
-        input_file=str(input_csv),
-        target_column="target",
-        task="regression",
-        output_file=str(tmp_path / "results.csv"),
+    config = make_fast_config(
+        str(input_csv),
+        "regression",
+        tmp_path,
         skip_tuning=True,
         compute_shap_interactions=True,
         synthetic_config=SyntheticConfig(
@@ -690,12 +590,10 @@ def test_pipeline_severe_imbalance_keeps_high_shap_low_perm_feature(tmp_path):
     path = tmp_path / "imbalanced.csv"
     df.to_csv(path, index=False)
 
-    config = Config(
-        input_file=str(path),
-        target_column="target",
-        task="binary",
-        output_file=str(tmp_path / "results.csv"),
-        output_format="csv",
+    config = make_fast_config(
+        str(path),
+        "binary",
+        tmp_path,
         xgboost_config=XGBoostConfig(max_depth=2, extra_params={"n_estimators": 20}),
         skip_tuning=True,
     )

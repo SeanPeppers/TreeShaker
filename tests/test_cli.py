@@ -4,23 +4,13 @@ from unittest.mock import patch
 
 import pandas as pd
 import pytest
+from conftest import cli_argv
 
 from treeshaker.cli import main, parse_arguments
 
 
 def test_parse_arguments_required():
-    with patch(
-        "sys.argv",
-        [
-            "treeshaker",
-            "--input",
-            "f.csv",
-            "--target",
-            "y",
-            "--task",
-            "binary",
-        ],
-    ):
+    with patch("sys.argv", cli_argv()):
         args = parse_arguments()
     assert args.input == "f.csv"
     assert args.target == "y"
@@ -28,18 +18,7 @@ def test_parse_arguments_required():
 
 
 def test_parse_arguments_defaults():
-    with patch(
-        "sys.argv",
-        [
-            "treeshaker",
-            "--input",
-            "f.csv",
-            "--target",
-            "y",
-            "--task",
-            "regression",
-        ],
-    ):
+    with patch("sys.argv", cli_argv(task="regression")):
         args = parse_arguments()
     assert args.output == "treeshaker_results.csv"
     assert args.output_format == "csv"
@@ -56,40 +35,14 @@ def test_parse_arguments_defaults():
 
 
 def test_parse_arguments_device_explicit():
-    with patch(
-        "sys.argv",
-        [
-            "treeshaker",
-            "--input",
-            "f.csv",
-            "--target",
-            "y",
-            "--task",
-            "regression",
-            "--device",
-            "cpu",
-        ],
-    ):
+    with patch("sys.argv", cli_argv("--device", "cpu", task="regression")):
         args = parse_arguments()
     assert args.device == "cpu"
 
 
 def test_parse_arguments_device_invalid_rejected():
     with (
-        patch(
-            "sys.argv",
-            [
-                "treeshaker",
-                "--input",
-                "f.csv",
-                "--target",
-                "y",
-                "--task",
-                "regression",
-                "--device",
-                "tpu",
-            ],
-        ),
+        patch("sys.argv", cli_argv("--device", "tpu", task="regression")),
         pytest.raises(SystemExit),
     ):
         parse_arguments()
@@ -100,21 +53,16 @@ def test_main_end_to_end_with_explicit_cpu_device(binary_csv, tmp_path):
     output = str(tmp_path / "results.csv")
     with patch(
         "sys.argv",
-        [
-            "treeshaker",
-            "--input",
-            binary_csv,
-            "--target",
-            "target",
-            "--task",
-            "binary",
+        cli_argv(
             "--output",
             output,
             "--optuna-trials",
             "1",
             "--device",
             "cpu",
-        ],
+            input=binary_csv,
+            target="target",
+        ),
     ):
         exit_code = main()
     assert exit_code == 0
@@ -130,19 +78,14 @@ def test_main_explicit_cuda_device_without_gpu_returns_error(binary_csv, tmp_pat
     with (
         patch(
             "sys.argv",
-            [
-                "treeshaker",
-                "--input",
-                binary_csv,
-                "--target",
-                "target",
-                "--task",
-                "binary",
+            cli_argv(
                 "--output",
                 output,
                 "--device",
                 "cuda",
-            ],
+                input=binary_csv,
+                target="target",
+            ),
         ),
         patch("treeshaker.config.detect_cuda_available", return_value=False),
     ):
@@ -151,20 +94,7 @@ def test_main_explicit_cuda_device_without_gpu_returns_error(binary_csv, tmp_pat
 
 
 def test_main_invalid_json_xgboost_params(tmp_path):
-    with patch(
-        "sys.argv",
-        [
-            "treeshaker",
-            "--input",
-            "f.csv",
-            "--target",
-            "y",
-            "--task",
-            "binary",
-            "--xgboost-params",
-            "not-json",
-        ],
-    ):
+    with patch("sys.argv", cli_argv("--xgboost-params", "not-json")):
         result = main()
     assert result == 1
 
@@ -173,21 +103,16 @@ def test_main_end_to_end(binary_csv, tmp_path):
     output = str(tmp_path / "results.csv")
     with patch(
         "sys.argv",
-        [
-            "treeshaker",
-            "--input",
-            binary_csv,
-            "--target",
-            "target",
-            "--task",
-            "binary",
+        cli_argv(
             "--output",
             output,
             "--optuna-trials",
             "3",
             "--optuna-timeout",
             "30",
-        ],
+            input=binary_csv,
+            target="target",
+        ),
     ):
         result = main()
     assert result == 0
@@ -200,19 +125,13 @@ def test_main_end_to_end(binary_csv, tmp_path):
 def test_parse_arguments_n_permutations_and_permutation_metric():
     with patch(
         "sys.argv",
-        [
-            "treeshaker",
-            "--input",
-            "f.csv",
-            "--target",
-            "y",
-            "--task",
-            "regression",
+        cli_argv(
             "--n-permutations",
             "3",
             "--permutation-metric",
             "wape",
-        ],
+            task="regression",
+        ),
     ):
         args = parse_arguments()
     assert args.n_permutations == 3
@@ -222,17 +141,7 @@ def test_parse_arguments_n_permutations_and_permutation_metric():
 def test_parse_arguments_invalid_permutation_metric_rejected():
     with patch(
         "sys.argv",
-        [
-            "treeshaker",
-            "--input",
-            "f.csv",
-            "--target",
-            "y",
-            "--task",
-            "regression",
-            "--permutation-metric",
-            "bogus",
-        ],
+        cli_argv("--permutation-metric", "bogus", task="regression"),
     ):
         with pytest.raises(SystemExit):
             parse_arguments()
@@ -242,14 +151,7 @@ def test_main_end_to_end_with_n_permutations_and_metric(binary_csv, tmp_path):
     output = str(tmp_path / "results.csv")
     with patch(
         "sys.argv",
-        [
-            "treeshaker",
-            "--input",
-            binary_csv,
-            "--target",
-            "target",
-            "--task",
-            "binary",
+        cli_argv(
             "--output",
             output,
             "--optuna-trials",
@@ -260,7 +162,9 @@ def test_main_end_to_end_with_n_permutations_and_metric(binary_csv, tmp_path):
             "2",
             "--permutation-metric",
             "roc_auc",
-        ],
+            input=binary_csv,
+            target="target",
+        ),
     ):
         result = main()
     assert result == 0
@@ -269,10 +173,7 @@ def test_main_end_to_end_with_n_permutations_and_metric(binary_csv, tmp_path):
 
 
 def test_parse_arguments_shap_sample_size_default_none():
-    with patch(
-        "sys.argv",
-        ["treeshaker", "--input", "f.csv", "--target", "y", "--task", "regression"],
-    ):
+    with patch("sys.argv", cli_argv(task="regression")):
         args = parse_arguments()
     assert args.shap_sample_size is None
 
@@ -280,17 +181,7 @@ def test_parse_arguments_shap_sample_size_default_none():
 def test_parse_arguments_shap_sample_size():
     with patch(
         "sys.argv",
-        [
-            "treeshaker",
-            "--input",
-            "f.csv",
-            "--target",
-            "y",
-            "--task",
-            "regression",
-            "--shap-sample-size",
-            "100",
-        ],
+        cli_argv("--shap-sample-size", "100", task="regression"),
     ):
         args = parse_arguments()
     assert args.shap_sample_size == 100
@@ -300,14 +191,7 @@ def test_main_end_to_end_with_shap_sample_size(binary_csv, tmp_path):
     output = str(tmp_path / "results.csv")
     with patch(
         "sys.argv",
-        [
-            "treeshaker",
-            "--input",
-            binary_csv,
-            "--target",
-            "target",
-            "--task",
-            "binary",
+        cli_argv(
             "--output",
             output,
             "--optuna-trials",
@@ -316,7 +200,9 @@ def test_main_end_to_end_with_shap_sample_size(binary_csv, tmp_path):
             "30",
             "--shap-sample-size",
             "5",
-        ],
+            input=binary_csv,
+            target="target",
+        ),
     ):
         result = main()
     assert result == 0
