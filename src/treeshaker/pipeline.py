@@ -1,6 +1,7 @@
 """Core feature selection pipeline orchestration."""
 
 import logging
+from typing import Any
 
 import pandas as pd
 
@@ -42,7 +43,7 @@ class FeatureSelectionPipeline:
         self.logger = logging.getLogger(__name__)
         self.train_data: pd.DataFrame | None = None
         self.val_data: pd.DataFrame | None = None
-        self.model = None
+        self.model: Any = None
         self.feature_names: list[str] = []
         self.results: pd.DataFrame | None = None
 
@@ -82,6 +83,9 @@ class FeatureSelectionPipeline:
         from sklearn.metrics import log_loss, mean_squared_error
 
         optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+        if self.train_data is None or self.val_data is None:
+            raise RuntimeError("load_data() must be called before tune_hyperparams()")
 
         cfg = self.config.optuna_config
         xgb_cfg = self.config.xgboost_config
@@ -149,6 +153,9 @@ class FeatureSelectionPipeline:
         """
         import xgboost as xgb
 
+        if self.train_data is None or self.val_data is None:
+            raise RuntimeError("load_data() must be called before train_model()")
+
         combined = pd.concat([self.train_data, self.val_data], ignore_index=True)
         X = combined[self.feature_names]
         y = combined[self.config.target_column]
@@ -183,6 +190,8 @@ class FeatureSelectionPipeline:
             Sorted by shap_importance descending.
         """
         self.load_data()
+        if self.train_data is None or self.val_data is None:
+            raise RuntimeError("load_data() did not populate train/val data")
 
         best_params = self.tune_hyperparams()
         self.train_model(best_params)

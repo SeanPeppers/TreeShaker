@@ -84,7 +84,7 @@ def compute_permutation_importance(
     for i, feature in enumerate(feature_names):
         X_shuffled = X.copy()
         rng = np.random.default_rng(seed=42 + i)
-        X_shuffled[feature] = rng.permutation(X_shuffled[feature].values)
+        X_shuffled[feature] = rng.permutation(np.asarray(X_shuffled[feature].values))
         shuffled_preds = model.predict(X_shuffled)
         shuffled_score = metric_fn(y, shuffled_preds)
         importances[i] = baseline_score - shuffled_score

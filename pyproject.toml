@@ -33,6 +33,7 @@ dev = [
     "ruff>=0.1.0",
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
+    "mypy>=1.8.0",
 ]
 
 [project.scripts]
@@ -52,3 +53,31 @@ select = ["E", "F", "W", "I"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--cov=treeshaker --cov-report=term-missing"
+
+[tool.mypy]
+python_version = "3.13"
+files = ["src/treeshaker"]
+# numpy/pandas/xgboost stubs often type return values as Any (e.g. ndarray
+# element access, DataFrame column ops), so warn_return_any would mostly
+# flag library-boundary noise rather than real bugs in our code.
+warn_return_any = false
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+# Third-party ML libraries either ship no stubs or only partial stubs.
+# Silence missing-import noise from them individually as a backstop in
+# case ignore_missing_imports behavior changes; keeps the source code
+# free of per-line `# type: ignore[import]` comments.
+[[tool.mypy.overrides]]
+module = [
+    "xgboost.*",
+    "shap.*",
+    "optuna.*",
+    "sklearn.*",
+]
+ignore_missing_imports = true
