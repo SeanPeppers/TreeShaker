@@ -27,6 +27,7 @@ def test_pipeline_binary_run(binary_csv, tmp_path):
         "feature_name",
         "shap_importance",
         "permutation_importance",
+        "mutual_info_score",
         "recommendation",
         "reason",
     }

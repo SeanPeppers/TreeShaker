@@ -9,6 +9,7 @@ import pandas as pd
 from .config import Config
 from .harm_detection import HarmDetector
 from .importance import (
+    compute_mutual_information,
     compute_permutation_importance,
     compute_shap_importance,
     compute_shap_interactions,
@@ -27,11 +28,12 @@ class FeatureSelectionPipeline:
     3. Train the final XGBoost model on tuned hyperparameters.
     4. Compute SHAP importance for each feature.
     5. Compute permutation importance for each feature.
-    6. Flag harmful features using both importance signals.
-    7. Detect data leakage warnings.
-    8. Save results to CSV or HTML.
-    9. (Optional, opt-in) Compute pairwise SHAP interaction values and save
-       them to a separate `<output_stem>_interactions.csv` file.
+    6. Compute mutual information between each feature and the target.
+    7. Flag harmful features using both importance signals.
+    8. Detect data leakage warnings.
+    9. Save results to CSV or HTML.
+    10. (Optional, opt-in) Compute pairwise SHAP interaction values and save
+        them to a separate `<output_stem>_interactions.csv` file.
 
     Args:
         config: A Config instance describing all pipeline settings.
@@ -202,7 +204,7 @@ class FeatureSelectionPipeline:
 
         Returns:
             DataFrame with columns: feature_name, shap_importance,
-            permutation_importance, recommendation, reason.
+            permutation_importance, mutual_info_score, recommendation, reason.
             recommendation is "Drop", "Caution", or "Keep".
             reason is a plain English explanation (empty string if "Keep").
             Sorted by shap_importance descending.
@@ -235,6 +237,14 @@ class FeatureSelectionPipeline:
             feature_names=self.feature_names,
             metric_fn=metric_fn,
             use_predict_proba=(self.config.task == "binary"),
+        )
+
+        mi_score = compute_mutual_information(
+            data=self.val_data,
+            target_column=self.config.target_column,
+            feature_names=self.feature_names,
+            task=self.config.task,
+            random_seed=self.config.random_seed,
         )
 
         detector = HarmDetector(
@@ -280,6 +290,7 @@ class FeatureSelectionPipeline:
                     "feature_name": self.feature_names,
                     "shap_importance": shap_importance,
                     "permutation_importance": perm_importance,
+                    "mutual_info_score": mi_score,
                     "recommendation": recommendations,
                     "reason": reasons,
                 }

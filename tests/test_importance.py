@@ -8,6 +8,7 @@ from sklearn.datasets import make_classification, make_regression
 from sklearn.metrics import roc_auc_score
 
 from treeshaker.importance import (
+    compute_mutual_information,
     compute_permutation_importance,
     compute_shap_importance,
     compute_shap_interactions,
@@ -27,6 +28,23 @@ def fitted_binary_model():
     model = xgb.XGBClassifier(n_estimators=20, random_state=42, verbosity=0)
     model.fit(df[feature_names], df["target"])
     return model, df, feature_names
+
+
+@pytest.fixture
+def multiclass_data():
+    """Return a DataFrame with a multiclass target and matching feature names."""
+    X, y = make_classification(
+        n_samples=150,
+        n_features=8,
+        n_informative=5,
+        n_classes=3,
+        n_clusters_per_class=1,
+        random_state=42,
+    )
+    feature_names = [f"f{i}" for i in range(8)]
+    df = pd.DataFrame(X, columns=feature_names)
+    df["target"] = y
+    return df, feature_names
 
 
 @pytest.fixture
@@ -162,3 +180,39 @@ def test_permutation_importance_informative_features_positive(
     )
     # At least some features should have positive importance
     assert (importance > 0).any()
+
+
+def test_mutual_information_binary_shape(fitted_binary_model):
+    _, df, feature_names = fitted_binary_model
+    scores = compute_mutual_information(
+        df, "target", feature_names, task="binary", random_seed=42
+    )
+    assert scores.shape == (8,)
+    assert (scores >= 0).all()
+
+
+def test_mutual_information_multiclass_shape(multiclass_data):
+    df, feature_names = multiclass_data
+    scores = compute_mutual_information(
+        df, "target", feature_names, task="multiclass", random_seed=42
+    )
+    assert scores.shape == (8,)
+    assert (scores >= 0).all()
+
+
+def test_mutual_information_regression_shape(fitted_regression_model):
+    _, df, feature_names = fitted_regression_model
+    scores = compute_mutual_information(
+        df, "target", feature_names, task="regression", random_seed=42
+    )
+    assert scores.shape == (8,)
+    assert (scores >= 0).all()
+
+
+def test_mutual_information_informative_features_higher(fitted_regression_model):
+    """Informative features should generally score higher than random noise."""
+    _, df, feature_names = fitted_regression_model
+    scores = compute_mutual_information(
+        df, "target", feature_names, task="regression", random_seed=42
+    )
+    assert (scores > 0).any()

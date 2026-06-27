@@ -141,19 +141,20 @@ Results are sorted by SHAP importance (descending).
 | `feature_name` | str | Feature column name |
 | `shap_importance` | float | Mean absolute SHAP value across validation samples |
 | `permutation_importance` | float | Performance drop when the feature is shuffled |
+| `mutual_info_score` | float | Model-agnostic mutual information between the feature and the target (cross-check on SHAP/permutation) |
 | `recommendation` | str | `Drop`, `Caution`, or `Keep` |
 | `reason` | str | Plain-English explanation. Empty if `Keep` |
 
 Example output:
 
 ```
-feature_name  shap_importance  permutation_importance  recommendation  reason
-feature_3     0.4821           0.312                   Keep
-feature_0     0.3104           0.198                   Keep
-feature_7     0.1823           0.091                   Keep
-feature_2     0.0043           0.009                   Drop            The model assigns almost no weight to this feature (SHAP: 0.0043)...
-feature_9     0.0011           -0.002                  Drop            The model ignores this feature entirely...
-customer_id   0.0512           0.041                   Caution         Column name 'customer_id' looks like a row identifier...
+feature_name  shap_importance  permutation_importance  mutual_info_score  recommendation  reason
+feature_3     0.4821           0.312                   0.398               Keep
+feature_0     0.3104           0.198                   0.271               Keep
+feature_7     0.1823           0.091                   0.155               Keep
+feature_2     0.0043           0.009                   0.002               Drop            The model assigns almost no weight to this feature (SHAP: 0.0043)...
+feature_9     0.0011           -0.002                  0.000               Drop            The model ignores this feature entirely...
+customer_id   0.0512           0.041                   0.061               Caution         Column name 'customer_id' looks like a row identifier...
 ```
 
 `recommendation` logic:

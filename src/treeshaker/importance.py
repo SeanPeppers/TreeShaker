@@ -182,3 +182,49 @@ def compute_permutation_importance(
         importances[i] = baseline_score - shuffled_score
 
     return importances
+
+
+def compute_mutual_information(
+    data: pd.DataFrame,
+    target_column: str,
+    feature_names: list[str],
+    task: str,
+    random_seed: int,
+) -> np.ndarray:
+    """
+    Compute mutual information between each feature and the target.
+
+    Mutual information is a model-agnostic, information-theoretic measure
+    of dependency between a feature and the target. Unlike SHAP and
+    permutation importance, it does not depend on the trained model, so it
+    can serve as an independent cross-check on those rankings and can catch
+    non-linear or categorical dependencies a particular model might
+    under-weight.
+
+    Dispatches to sklearn's `mutual_info_classif` for binary/multiclass
+    tasks or `mutual_info_regression` for regression tasks.
+
+    Args:
+        data: DataFrame including both features and the target column.
+        target_column: Name of the target column in data.
+        feature_names: Ordered list of feature column names.
+        task: One of "binary", "multiclass", or "regression".
+        random_seed: Seed for reproducible results (sklearn's MI estimators
+            use a random noise term internally).
+
+    Returns:
+        Array of shape (n_features,) with mutual information score per
+        feature. Values are non-negative; 0 means no detected dependency.
+    """
+    logger.info("Computing mutual information")
+    from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
+
+    X = data[feature_names]
+    y = data[target_column]
+
+    if task in ("binary", "multiclass"):
+        scores = mutual_info_classif(X, y, random_state=random_seed)
+    else:
+        scores = mutual_info_regression(X, y, random_state=random_seed)
+
+    return np.asarray(scores)
