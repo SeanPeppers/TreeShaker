@@ -59,7 +59,7 @@ select = ["E", "F", "W", "I"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=treeshaker --cov-report=term-missing"
+addopts = "--cov=treeshaker --cov-report=term-missing --cov-fail-under=85"
 
 [tool.mypy]
 python_version = "3.13"
