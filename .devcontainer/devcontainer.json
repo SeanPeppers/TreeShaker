@@ -1,0 +1,17 @@
+{
+  "name": "TreeShaker",
+  "image": "mcr.microsoft.com/devcontainers/python:3.13",
+  "postCreateCommand": "pip install -e \".[demo]\"",
+  "forwardPorts": [7860],
+  "portsAttributes": {
+    "7860": {
+      "label": "TreeShaker Gradio demo",
+      "onAutoForward": "openPreview"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python", "charliermarsh.ruff"]
+    }
+  }
+}
