@@ -455,17 +455,26 @@ class FeatureSelectionPipeline:
         reasons = []
         for i, feature in enumerate(self.feature_names):
             lk_warnings = leakage_warnings[feature]
-            lk_text = " | ".join(lk_warnings) if lk_warnings else ""
 
-            if is_harmful[i] and lk_text:
+            if is_harmful[i] and lk_warnings:
                 recommendations.append("Drop")
-                reasons.append(harm_reasons[i] + " Also: " + lk_text)
+                all_reasons = [harm_reasons[i], *lk_warnings]
+                numbered = " ".join(
+                    f"({j}) {r}" for j, r in enumerate(all_reasons, start=1)
+                )
+                reasons.append(f"{len(all_reasons)} issues found — " + numbered)
             elif is_harmful[i]:
                 recommendations.append("Drop")
                 reasons.append(harm_reasons[i])
-            elif lk_text:
+            elif lk_warnings:
                 recommendations.append("Caution")
-                reasons.append(lk_text)
+                if len(lk_warnings) > 1:
+                    numbered = " ".join(
+                        f"({j}) {r}" for j, r in enumerate(lk_warnings, start=1)
+                    )
+                    reasons.append(f"{len(lk_warnings)} issues found — " + numbered)
+                else:
+                    reasons.append(lk_warnings[0])
             else:
                 recommendations.append("Keep")
                 reasons.append("")

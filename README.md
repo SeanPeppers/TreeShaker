@@ -160,17 +160,17 @@ feature_name  shap_importance  permutation_importance  mutual_info_score  recomm
 feature_3     0.4821           0.312                   0.398               Keep
 feature_0     0.3104           0.198                   0.271               Keep
 feature_7     0.1823           0.091                   0.155               Keep
-feature_2     0.0043           0.009                   0.002               Drop            The model assigns almost no weight to this feature (SHAP: 0.0043)...
+feature_2     0.0043           0.009                   0.002               Drop            The model assigns almost no weight to this feature (SHAP importance: 0.0043, below the 0.010 threshold)...
 feature_9     0.0011           -0.002                  0.000               Drop            The model ignores this feature entirely...
 customer_id   0.0512           0.041                   0.061               Caution         Column name 'customer_id' looks like a row identifier...
 ```
 
 `recommendation` logic:
 
-- **Drop** — harmful (low SHAP and/or low permutation importance)
+- **Drop** — harmful (low SHAP importance and/or low permutation importance)
 - **Caution** — leakage/logical warning only, model is still using the feature
 - **Keep** — no issues found
-- If both harmful *and* a leakage warning fire, the feature is still `Drop`, with both reasons combined.
+- If both harmful *and* a leakage warning fire, the feature is still `Drop`, with the reasons combined into a numbered list (e.g. `2 issues found — (1) ... (2) ...`).
 
 ## CLI reference
 
