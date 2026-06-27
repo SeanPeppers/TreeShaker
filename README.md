@@ -192,6 +192,7 @@ TreeShaker **automatically** derives `recommendation` and `reason` for every fea
 | `--output` | No | `treeshaker_results.csv` | Output file path |
 | `--format` | No | `csv` | `csv` or `html` |
 | `--xgboost-params` | No | `{}` | Custom XGBoost params as a JSON string |
+| `--device` | No | `auto` | `auto`, `cuda`, or `cpu`. `auto` automatically uses a CUDA GPU when one is usable, falling back to CPU otherwise -- no flag needed for the common case. `cuda` forces GPU and raises a clear error if no usable GPU is detected. `cpu` forces CPU regardless of GPU availability |
 | `--feature-groups` | No | `{}` | Feature groups as a JSON string mapping group name to a list of feature names, e.g. `'{"price": ["price_min", "price_max"]}'` |
 | `--group-by-prefix` | No | `False` | Auto-derive feature groups from the common prefix before the last underscore (e.g. `price_min`/`price_max` -> group `price`). Ignored if `--feature-groups` is set |
 | `--optuna-trials` | No | `50` | Number of Optuna tuning trials |
@@ -324,6 +325,31 @@ config = Config(
 pipeline = FeatureSelectionPipeline(config)
 results = pipeline.run()
 print(pipeline.interactions)
+```
+
+## GPU acceleration
+
+TreeShaker **automatically** uses a CUDA GPU for XGBoost training when one is usable — no flag needed. On startup, it runs a cheap, cached real-fit check (not just a build-flag check) to confirm a CUDA device actually works in the current environment; the result is cached for the process so it isn't re-checked per fold/per fit. If no usable GPU is found, it silently falls back to CPU and training proceeds as normal.
+
+Use `--device` (`device` in `XGBoostConfig`) to override this:
+
+- `--device auto` (default) — use GPU if available, else CPU, automatically and silently.
+- `--device cuda` — force GPU. If no usable CUDA GPU is detected, TreeShaker raises a clear `ConfigError` rather than silently training on CPU, since that mismatch usually means you expected acceleration you didn't get.
+- `--device cpu` — force CPU regardless of GPU availability.
+
+```bash
+treeshaker --input data.csv --target churn --task binary --device cuda
+```
+
+```python
+from treeshaker import Config, XGBoostConfig
+
+config = Config(
+    input_file="data.csv",
+    target_column="churn",
+    task="binary",
+    xgboost_config=XGBoostConfig(device="cuda"),
+)
 ```
 
 ## Speeding up SHAP on large datasets

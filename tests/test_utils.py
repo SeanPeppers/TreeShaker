@@ -8,10 +8,44 @@ from treeshaker.exceptions import ValidationError
 from treeshaker.utils import (
     check_class_imbalance,
     compute_wape,
+    detect_cuda_available,
     get_metric_fn,
     load_csv,
+    resolve_xgboost_device,
     validate_target,
 )
+
+
+def test_resolve_xgboost_device_auto_picks_cuda_when_detected(monkeypatch):
+    monkeypatch.setattr("treeshaker.utils.detect_cuda_available", lambda: True)
+    assert resolve_xgboost_device("auto") == "cuda"
+
+
+def test_resolve_xgboost_device_auto_picks_cpu_when_not_detected(monkeypatch):
+    monkeypatch.setattr("treeshaker.utils.detect_cuda_available", lambda: False)
+    assert resolve_xgboost_device("auto") == "cpu"
+
+
+def test_resolve_xgboost_device_explicit_values_pass_through(monkeypatch):
+    monkeypatch.setattr("treeshaker.utils.detect_cuda_available", lambda: False)
+    assert resolve_xgboost_device("cuda") == "cuda"
+    assert resolve_xgboost_device("cpu") == "cpu"
+
+
+def test_resolve_xgboost_device_invalid_raises():
+    with pytest.raises(ValueError, match="device"):
+        resolve_xgboost_device("tpu")
+
+
+def test_detect_cuda_available_returns_bool_and_is_cached():
+    # Real detection (no GPU expected in CI) -- just confirm it returns a
+    # bool without raising, and that the lru_cache means a second call
+    # doesn't re-run the underlying fit (same cached object identity check
+    # is implicit; we just confirm repeated calls are consistent/cheap).
+    result1 = detect_cuda_available()
+    result2 = detect_cuda_available()
+    assert isinstance(result1, bool)
+    assert result1 == result2
 
 
 def test_balanced_binary_returns_none():

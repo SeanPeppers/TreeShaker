@@ -1,11 +1,12 @@
 """Configuration dataclasses for TreeShaker."""
 
 from dataclasses import asdict, dataclass, field
+from typing import Literal
 
 from .exceptions import ConfigError
 from .leakage_detection import LeakageConfig
 from .residual_diagnostics import ResidualConfig
-from .utils import VALID_PERMUTATION_METRICS
+from .utils import VALID_PERMUTATION_METRICS, detect_cuda_available
 
 
 @dataclass
@@ -28,12 +29,43 @@ class XGBoostConfig:
     colsample_bytree: float = 0.8
     gamma: float = 0.0
     min_child_weight: int = 1
+    device: Literal["auto", "cuda", "cpu"] = "auto"
+    """Which device XGBoost should train on. "auto" (default) uses a CUDA
+    GPU automatically when one is usable, silently falling back to CPU
+    otherwise -- no flag needed for the common case. Explicit "cuda" or
+    "cpu" overrides auto-detection and is respected even if detection
+    would suggest otherwise; forcing "cuda" when no GPU is actually
+    usable raises ConfigError instead of silently falling back, since
+    that mismatch likely means the user expected GPU acceleration they
+    aren't getting."""
     extra_params: dict = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        """Validate device and fail fast if "cuda" is forced but unusable."""
+        valid_devices = {"auto", "cuda", "cpu"}
+        if self.device not in valid_devices:
+            raise ConfigError(
+                f"device must be one of {sorted(valid_devices)}, got {self.device!r}"
+            )
+        if self.device == "cuda" and not detect_cuda_available():
+            raise ConfigError(
+                "device='cuda' was explicitly requested but no usable CUDA"
+                " GPU was detected. Use device='auto' to fall back to CPU"
+                " automatically, or device='cpu' to run on CPU."
+            )
+
     def to_dict(self) -> dict:
-        """Return merged XGBoost params dict including extra_params."""
+        """Return merged XGBoost params dict including extra_params.
+
+        The "device" field is resolved to a literal "cuda"/"cpu" value (via
+        resolve_xgboost_device) rather than passed through as "auto", since
+        XGBoost itself doesn't understand "auto".
+        """
+        from .utils import resolve_xgboost_device
+
         d = asdict(self)
         d.pop("extra_params")
+        d["device"] = resolve_xgboost_device(self.device)
         d.update(self.extra_params)
         return d
 
