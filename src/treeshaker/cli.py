@@ -48,6 +48,20 @@ def parse_arguments() -> argparse.Namespace:
         help="Custom XGBoost params as a JSON string. (default: {})",
     )
     parser.add_argument(
+        "--feature-groups",
+        default="{}",
+        help="Feature groups as a JSON string mapping group name to a list of"
+        ' feature names, e.g. \'{"price": ["price_min", "price_max"]}\'.'
+        " (default: {})",
+    )
+    parser.add_argument(
+        "--group-by-prefix",
+        action="store_true",
+        help="Auto-derive feature groups from the common prefix before the"
+        " last underscore (e.g. price_min/price_max -> group 'price')."
+        " Ignored if --feature-groups is set.",
+    )
+    parser.add_argument(
         "--optuna-trials",
         type=int,
         default=50,
@@ -157,6 +171,12 @@ def main() -> int:
         logger.error(f"Invalid --xgboost-params JSON: {exc}")
         return 1
 
+    try:
+        feature_groups = json.loads(args.feature_groups) or None
+    except json.JSONDecodeError as exc:
+        logger.error(f"Invalid --feature-groups JSON: {exc}")
+        return 1
+
     leakage_config = LeakageConfig(
         target_corr_threshold=args.target_corr_threshold,
         dominant_shap_fraction=args.dominant_shap_fraction,
@@ -180,6 +200,8 @@ def main() -> int:
             shap_importance_threshold=args.shap_threshold,
             permutation_importance_threshold=args.perm_threshold,
             leakage_config=leakage_config,
+            feature_groups=feature_groups,
+            group_by_prefix=args.group_by_prefix,
             bootstrap_config=BootstrapConfig(
                 n_bootstrap=args.n_bootstrap,
                 sample_frac=args.bootstrap_sample_frac,

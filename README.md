@@ -29,6 +29,7 @@ Automated feature selection using XGBoost, SHAP, and Optuna. Give it a CSV and a
 - [SHAP interaction values](#shap-interaction-values)
 - [Class imbalance warning](#class-imbalance-warning)
 - [Bootstrap importance stability (opt-in)](#bootstrap-importance-stability-opt-in)
+- [Feature-group importance](#feature-group-importance)
 - [Development](#development)
 
 ## How it works
@@ -177,6 +178,8 @@ customer_id   0.0512           0.041                   0.061               Cauti
 | `--output` | No | `treeshaker_results.csv` | Output file path |
 | `--format` | No | `csv` | `csv` or `html` |
 | `--xgboost-params` | No | `{}` | Custom XGBoost params as a JSON string |
+| `--feature-groups` | No | `{}` | Feature groups as a JSON string mapping group name to a list of feature names, e.g. `'{"price": ["price_min", "price_max"]}'` |
+| `--group-by-prefix` | No | `False` | Auto-derive feature groups from the common prefix before the last underscore (e.g. `price_min`/`price_max` -> group `price`). Ignored if `--feature-groups` is set |
 | `--optuna-trials` | No | `50` | Number of Optuna tuning trials |
 | `--optuna-timeout` | No | `300` | Optuna timeout in seconds |
 | `--shap-threshold` | No | `0.01` | Flag features with mean \|SHAP\| below this |
@@ -276,6 +279,51 @@ treeshaker --input data.csv --target churn --task binary --n-bootstrap 30
 This adds two columns to the output: `shap_importance_mean` and `shap_importance_std`, the mean and standard deviation of each feature's SHAP importance across the `n_bootstrap` refits. A high `shap_importance_std` relative to `shap_importance_mean` signals a feature whose importance ranking isn't stable and shouldn't be trusted from the single main fit alone.
 
 By default `n_bootstrap` is `0`, so this is fully opt-in and the output schema is unchanged unless you ask for it.
+
+## Feature-group importance
+
+Real datasets often have related features that share a prefix (e.g. `price_min`, `price_max`, `price_avg` all belong to a "price" group). Beyond per-feature recommendations, TreeShaker can optionally aggregate SHAP importance per group, so you can decide whether to drop an entire group at once.
+
+This is off by default and has two ways to turn it on:
+
+1. **Explicit groups** — pass a mapping of group name to feature names, via `feature_groups` on `Config` or `--feature-groups` on the CLI:
+
+   ```python
+   from treeshaker import FeatureSelectionPipeline, Config
+
+   config = Config(
+       input_file="data.csv",
+       target_column="price",
+       task="regression",
+       feature_groups={"price": ["price_min", "price_max", "price_avg"]},
+   )
+   pipeline = FeatureSelectionPipeline(config)
+   results = pipeline.run()
+   print(pipeline.group_summary)
+   ```
+
+   ```bash
+   treeshaker --input data.csv --target target --task regression \
+     --feature-groups '{"price": ["price_min", "price_max", "price_avg"]}'
+   ```
+
+2. **Automatic prefix grouping** — set `group_by_prefix=True` on `Config` (or pass `--group-by-prefix` on the CLI) to auto-derive groups from the common prefix before the last underscore in each feature name (e.g. `price_min`/`price_max` -> group `"price"`). Features with no underscore, or whose prefix only matches one feature, aren't grouped. Ignored if `feature_groups` is set explicitly.
+
+When grouping is active (either way), the per-feature `results` DataFrame returned by `run()` is unchanged. A separate group summary is computed and:
+
+- exposed as `pipeline.group_summary` (a `pandas.DataFrame`)
+- saved alongside the main output as `<output_stem>_groups.csv` (e.g. `treeshaker_results_groups.csv`)
+
+`group_summary` columns:
+
+| Column | Type | Description |
+|---|---|---|
+| `group_name` | str | Group name |
+| `n_features` | int | Number of features in the group found in the dataset |
+| `total_shap_importance` | float | **Sum** of `shap_importance` across the group's features |
+| `features` | str | Comma-separated list of the group's feature names |
+
+Importance is **summed**, not averaged, per group — the sum reads as "total model attention this group accounts for," which is the more interpretable number when deciding whether to drop an entire group.
 
 ## Development
 

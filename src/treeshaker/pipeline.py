@@ -2,6 +2,7 @@
 
 import logging
 import os
+from collections import defaultdict
 from typing import Any
 
 import numpy as np
@@ -17,6 +18,78 @@ from .importance import (
 )
 from .leakage_detection import LeakageDetector
 from .utils import check_class_imbalance, get_metric_fn, load_csv, save_results
+
+
+def derive_prefix_groups(feature_names: list[str]) -> dict[str, list[str]]:
+    """Auto-derive feature groups from a common prefix before the last underscore.
+
+    E.g. "price_min" and "price_max" both map to group "price". Features with
+    no underscore in their name are skipped (they don't belong to any group).
+    Groups with only a single member are dropped, since a "group" of one
+    feature provides no aggregation benefit over the per-feature row.
+
+    Args:
+        feature_names: List of feature column names.
+
+    Returns:
+        Dict mapping group name to list of feature names, excluding
+        singleton groups.
+    """
+    candidates: dict[str, list[str]] = defaultdict(list)
+    for name in feature_names:
+        if "_" not in name:
+            continue
+        prefix = name.rsplit("_", 1)[0]
+        candidates[prefix].append(name)
+    return {prefix: names for prefix, names in candidates.items() if len(names) > 1}
+
+
+def build_group_summary(
+    feature_groups: dict[str, list[str]],
+    feature_names: list[str],
+    shap_importance: Any,
+) -> pd.DataFrame:
+    """Aggregate per-feature SHAP importance into a group-level summary.
+
+    Importance is summed (not averaged) per group, since the sum reads as
+    "total model attention this group accounts for" -- a more interpretable
+    quantity for deciding whether to drop an entire group than a per-feature
+    average would be.
+
+    Features named in a group but not present in feature_names are silently
+    ignored, so users can pass slightly stale or over-inclusive group specs.
+
+    Args:
+        feature_groups: Dict mapping group name to list of feature names.
+        feature_names: All feature names evaluated by the pipeline, in the
+            same order as shap_importance.
+        shap_importance: Mean absolute SHAP value per feature, aligned with
+            feature_names.
+
+    Returns:
+        DataFrame with columns: group_name, n_features, total_shap_importance,
+        features. Sorted by total_shap_importance descending.
+    """
+    importance_by_feature = dict(zip(feature_names, shap_importance, strict=True))
+
+    rows = []
+    for group_name, members in feature_groups.items():
+        present = [f for f in members if f in importance_by_feature]
+        total = sum(importance_by_feature[f] for f in present)
+        rows.append(
+            {
+                "group_name": group_name,
+                "n_features": len(present),
+                "total_shap_importance": total,
+                "features": ", ".join(present),
+            }
+        )
+
+    return (
+        pd.DataFrame(rows)
+        .sort_values("total_shap_importance", ascending=False)
+        .reset_index(drop=True)
+    )
 
 
 class FeatureSelectionPipeline:
@@ -58,6 +131,7 @@ class FeatureSelectionPipeline:
         self.model: Any = None
         self.feature_names: list[str] = []
         self.results: pd.DataFrame | None = None
+        self.group_summary: pd.DataFrame | None = None
         self.interactions: pd.DataFrame | None = None
 
     def load_data(self) -> None:
@@ -289,6 +363,13 @@ class FeatureSelectionPipeline:
             recommendation is "Drop", "Caution", or "Keep".
             reason is a plain English explanation (empty string if "Keep").
             Sorted by shap_importance descending.
+
+            This per-feature schema is unchanged regardless of grouping
+            settings. If feature_groups is set, or group_by_prefix is True
+            and at least one prefix group is found, a group-level summary
+            is additionally written to "<output_stem>_groups.csv" next to
+            the main output file (see build_group_summary()).
+
             If config.bootstrap_config.n_bootstrap > 0, two additional
             columns are included: shap_importance_mean and
             shap_importance_std, summarizing SHAP importance across
@@ -394,6 +475,24 @@ class FeatureSelectionPipeline:
             output_file=self.config.output_file,
             output_format=self.config.output_format,
         )
+
+        groups = self.config.feature_groups
+        if not groups and self.config.group_by_prefix:
+            groups = derive_prefix_groups(self.feature_names)
+
+        if groups:
+            group_summary = build_group_summary(
+                feature_groups=groups,
+                feature_names=self.feature_names,
+                shap_importance=shap_importance,
+            )
+            self.group_summary = group_summary
+            stem, _ = os.path.splitext(self.config.output_file)
+            groups_path = f"{stem}_groups.csv"
+            group_summary.to_csv(groups_path, index=False)
+            self.logger.info(
+                f"Group summary ({len(group_summary)} groups) saved to {groups_path}"
+            )
 
         if self.config.compute_shap_interactions:
             self.interactions = compute_shap_interactions(

@@ -61,6 +61,8 @@ class Config:
     permutation_importance_threshold: float = 0.05
     compute_shap_interactions: bool = False
     leakage_config: LeakageConfig = field(default_factory=LeakageConfig)
+    feature_groups: dict[str, list[str]] | None = None
+    group_by_prefix: bool = False
     bootstrap_config: BootstrapConfig = field(default_factory=BootstrapConfig)
     imbalance_warning_threshold: float = 0.1
     verbose: bool = False
