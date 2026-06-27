@@ -97,7 +97,7 @@ pipeline = FeatureSelectionPipeline(config)
 results = pipeline.run()
 
 # Inspect after the run
-print(results[results["is_harmful"]])
+print(results[results["recommendation"] == "Drop"])
 ```
 
 ---
@@ -111,19 +111,27 @@ Results are sorted by SHAP importance (descending).
 | `feature_name` | str | Feature column name |
 | `shap_importance` | float | Mean absolute SHAP value across validation samples |
 | `permutation_importance` | float | Performance drop when the feature is shuffled |
-| `is_harmful` | bool | `True` if either threshold was triggered |
-| `harm_reason` | str | Human-readable explanation, or empty string if not harmful |
+| `recommendation` | str | `Drop`, `Caution`, or `Keep` |
+| `reason` | str | Plain-English explanation. Empty if `Keep` |
 
 Example output:
 
 ```
-feature_name  shap_importance  permutation_importance  is_harmful  harm_reason
-feature_3     0.4821           0.312                   False
-feature_0     0.3104           0.198                   False
-feature_7     0.1823           0.091                   False
-feature_2     0.0043           0.009                   True        low SHAP importance (0.0043 < 0.01); low permutation importance (0.009 < 0.05)
-feature_9     0.0011           -0.002                  True        low SHAP importance (0.0011 < 0.01); low permutation importance (-0.002 < 0.05)
+feature_name  shap_importance  permutation_importance  recommendation  reason
+feature_3     0.4821           0.312                   Keep
+feature_0     0.3104           0.198                   Keep
+feature_7     0.1823           0.091                   Keep
+feature_2     0.0043           0.009                   Drop            The model assigns almost no weight to this feature (SHAP: 0.0043)...
+feature_9     0.0011           -0.002                  Drop            The model ignores this feature entirely...
+customer_id   0.0512           0.041                   Caution         Column name 'customer_id' looks like a row identifier...
 ```
+
+`recommendation` logic:
+
+- **Drop** — harmful (low SHAP and/or low permutation importance)
+- **Caution** — leakage/logical warning only, model is still using the feature
+- **Keep** — no issues found
+- If both harmful *and* a leakage warning fire, the feature is still `Drop`, with both reasons combined.
 
 ---
 
@@ -141,6 +149,9 @@ feature_9     0.0011           -0.002                  True        low SHAP impo
 | `--optuna-timeout` | No | `300` | Optuna timeout in seconds |
 | `--shap-threshold` | No | `0.01` | Flag features with mean \|SHAP\| below this |
 | `--perm-threshold` | No | `0.05` | Flag features with permutation importance below this |
+| `--target-corr-threshold` | No | `0.95` | Flag features whose correlation with the target exceeds this |
+| `--dominant-shap-fraction` | No | `0.7` | Flag a feature if it accounts for more than this fraction of total SHAP importance |
+| `--skip-leakage-check` | No | `False` | Disable all leakage/logical-error checks |
 | `--test-size` | No | `0.2` | Fraction of data used for validation |
 | `--random-seed` | No | `42` | Random seed for reproducibility |
 | `--verbose` | No | `False` | Enable debug logging |
@@ -165,6 +176,22 @@ A feature is flagged as harmful if **either** condition is true:
 - **Low permutation importance** — permutation importance < `--perm-threshold` (default `0.05`). Shuffling the feature doesn't hurt performance, meaning the model isn't using it.
 
 Both thresholds are configurable. Raise them to be more aggressive about flagging features; lower them to only flag the most clearly useless ones.
+
+---
+
+## Leakage detection
+
+Five independent checks flag features that may be causing data leakage or are otherwise logically suspect. A feature can trigger more than one.
+
+| Check | Trigger | Why it matters |
+|---|---|---|
+| Target correlation | `\|r\|` with target ≥ `--target-corr-threshold` (default `0.95`) | Feature may have been derived from the target |
+| SHAP dominance | One feature accounts for ≥ `--dominant-shap-fraction` (default `0.7`) of total SHAP | A single feature this dominant may leak future/target info |
+| Near-constant | Same value in > 99% of rows | No signal, wastes model capacity |
+| Near-duplicate | Correlation ≥ 0.98 with another feature | Redundant — adds no extra signal |
+| Suspicious names | Matches patterns like `_id`, `future_`, `label`, `target` | Likely an identifier or future-leaking column |
+
+Leakage warnings produce a `Caution` recommendation on their own; combined with harm detection they escalate to `Drop`. Disable all five checks with `--skip-leakage-check`.
 
 ---
 
