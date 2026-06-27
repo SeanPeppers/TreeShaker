@@ -136,3 +136,4 @@ dmypy.json
 # Internal-only notes, never push
 /paper/
 marketing.md
+/CLAUDE.md
