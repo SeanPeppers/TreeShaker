@@ -33,6 +33,66 @@ from .utils import (
 )
 
 
+def _build_xgb_fit_params(
+    base_params: dict, config: Config, random_seed: int | None = None
+) -> dict:
+    """Build the final XGBoost constructor kwargs shared across all fit sites.
+
+    Merges `base_params` (tuned/default hyperparameters) with the fields
+    that are always set the same way regardless of which pipeline stage is
+    fitting a model (Optuna's objective, the final train_model fit, and
+    each bootstrap importance refit): a deterministic random_state,
+    silent verbosity, native pandas-categorical support, and the resolved
+    training device. config.xgboost_config.extra_params is applied last so
+    user overrides win.
+
+    Args:
+        base_params: Hyperparameter dict to start from (e.g. Optuna's
+            suggested values, or config.xgboost_config.to_dict()).
+        config: The pipeline Config, used for random_seed (when
+            random_seed is not given), xgboost_config.device, and
+            xgboost_config.extra_params.
+        random_seed: Override for "random_state". Defaults to
+            config.random_seed; bootstrap refits pass a per-iteration seed
+            instead.
+
+    Returns:
+        A new dict ready to pass as XGBClassifier/XGBRegressor kwargs.
+    """
+    params = {
+        **base_params,
+        "random_state": (config.random_seed if random_seed is None else random_seed),
+        "verbosity": 0,
+        # Lets XGBoost natively consume pandas `category` dtype columns
+        # (produced by dtype_handling.prepare_feature_dtypes_splits for
+        # string features) without pre-encoding. A no-op when there are no
+        # categorical columns.
+        "enable_categorical": True,
+        "device": resolve_xgboost_device(config.xgboost_config.device),
+    }
+    params.update(config.xgboost_config.extra_params)
+    return params
+
+
+def _make_xgb_model(task: str, params: dict) -> Any:
+    """Instantiate the right XGBoost estimator class for a task.
+
+    Args:
+        task: One of "binary", "multiclass", or "regression".
+        params: Constructor kwargs, typically from _build_xgb_fit_params().
+
+    Returns:
+        An (unfitted) XGBClassifier (binary/multiclass) or XGBRegressor
+        (regression) instance.
+    """
+    import xgboost as xgb
+
+    if task in ("binary", "multiclass"):
+        objective_str = "binary:logistic" if task == "binary" else "multi:softprob"
+        return xgb.XGBClassifier(objective=objective_str, **params)
+    return xgb.XGBRegressor(**params)
+
+
 def derive_prefix_groups(feature_names: list[str]) -> dict[str, list[str]]:
     """Auto-derive feature groups from a common prefix before the last underscore.
 
@@ -216,7 +276,6 @@ class FeatureSelectionPipeline:
             Dictionary of best XGBoost hyperparameters found by Optuna.
         """
         import optuna
-        import xgboost as xgb
         from sklearn.metrics import log_loss, mean_squared_error
 
         optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -225,17 +284,15 @@ class FeatureSelectionPipeline:
             raise RuntimeError("load_data() must be called before tune_hyperparams()")
 
         cfg = self.config.optuna_config
-        xgb_cfg = self.config.xgboost_config
         task = self.config.task
 
         X_train = self.train_data[self.feature_names]
         y_train = self.train_data[self.config.target_column]
         X_val = self.val_data[self.feature_names]
         y_val = self.val_data[self.config.target_column]
-        device = resolve_xgboost_device(xgb_cfg.device)
 
         def objective(trial: optuna.Trial) -> float:
-            params = {
+            tuned_params = {
                 "max_depth": trial.suggest_int("max_depth", 3, 10),
                 "learning_rate": trial.suggest_float(
                     "learning_rate", 0.01, 0.3, log=True
@@ -244,29 +301,17 @@ class FeatureSelectionPipeline:
                 "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
                 "gamma": trial.suggest_float("gamma", 0.0, 5.0),
                 "min_child_weight": trial.suggest_int("min_child_weight", 1, 10),
-                "random_state": self.config.random_seed,
-                "verbosity": 0,
-                # Lets XGBoost natively consume pandas `category` dtype
-                # columns (produced by dtype_handling.prepare_feature_dtypes
-                # for string features) without pre-encoding. A no-op when
-                # there are no categorical columns.
-                "enable_categorical": True,
-                "device": device,
             }
-            params.update(xgb_cfg.extra_params)
+            params = _build_xgb_fit_params(tuned_params, self.config)
+            model = _make_xgb_model(task, params)
 
             if task in ("binary", "multiclass"):
-                objective_str = (
-                    "binary:logistic" if task == "binary" else "multi:softprob"
-                )
-                model = xgb.XGBClassifier(objective=objective_str, **params)
                 model.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=False)
                 # Binary and multiclass are both scored by log loss on the
                 # predicted class probabilities.
                 preds = model.predict_proba(X_val)
                 return log_loss(y_val, preds)
             else:
-                model = xgb.XGBRegressor(**params)
                 model.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=False)
                 preds = model.predict(X_val)
                 return mean_squared_error(y_val, preds)
@@ -295,8 +340,6 @@ class FeatureSelectionPipeline:
         Args:
             best_params: Hyperparameter dict returned by tune_hyperparams().
         """
-        import xgboost as xgb
-
         if self.train_data is None or self.val_data is None:
             raise RuntimeError("load_data() must be called before train_model()")
 
@@ -304,22 +347,8 @@ class FeatureSelectionPipeline:
         X = combined[self.feature_names]
         y = combined[self.config.target_column]
 
-        params = {
-            **best_params,
-            "random_state": self.config.random_seed,
-            "verbosity": 0,
-            "enable_categorical": True,
-            "device": resolve_xgboost_device(self.config.xgboost_config.device),
-        }
-        params.update(self.config.xgboost_config.extra_params)
-
-        if self.config.task in ("binary", "multiclass"):
-            objective_str = (
-                "binary:logistic" if self.config.task == "binary" else "multi:softprob"
-            )
-            self.model = xgb.XGBClassifier(objective=objective_str, **params)
-        else:
-            self.model = xgb.XGBRegressor(**params)
+        params = _build_xgb_fit_params(best_params, self.config)
+        self.model = _make_xgb_model(self.config.task, params)
 
         self.model.fit(X, y)
         self.logger.info("Final model trained on combined train+val data")
@@ -344,8 +373,6 @@ class FeatureSelectionPipeline:
             Array of shape (n_bootstrap, n_features) with SHAP importance
             from each bootstrap iteration.
         """
-        import xgboost as xgb
-
         from .importance import compute_shap_importance
 
         if self.train_data is None or self.val_data is None or self.test_data is None:
@@ -358,15 +385,6 @@ class FeatureSelectionPipeline:
         n_rows = len(combined)
         sample_size = max(1, int(round(n_rows * bootstrap_cfg.sample_frac)))
 
-        params = {
-            **best_params,
-            "random_state": self.config.random_seed,
-            "verbosity": 0,
-            "enable_categorical": True,
-            "device": resolve_xgboost_device(self.config.xgboost_config.device),
-        }
-        params.update(self.config.xgboost_config.extra_params)
-
         results = np.zeros((bootstrap_cfg.n_bootstrap, len(self.feature_names)))
         for i in range(bootstrap_cfg.n_bootstrap):
             seed = self.config.random_seed + i
@@ -377,18 +395,10 @@ class FeatureSelectionPipeline:
             X_resampled = resampled[self.feature_names]
             y_resampled = resampled[self.config.target_column]
 
-            iter_params = {**params, "random_state": seed}
-            if self.config.task in ("binary", "multiclass"):
-                objective_str = (
-                    "binary:logistic"
-                    if self.config.task == "binary"
-                    else "multi:softprob"
-                )
-                bootstrap_model = xgb.XGBClassifier(
-                    objective=objective_str, **iter_params
-                )
-            else:
-                bootstrap_model = xgb.XGBRegressor(**iter_params)
+            iter_params = _build_xgb_fit_params(
+                best_params, self.config, random_seed=seed
+            )
+            bootstrap_model = _make_xgb_model(self.config.task, iter_params)
 
             bootstrap_model.fit(X_resampled, y_resampled)
 

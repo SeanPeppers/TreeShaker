@@ -10,6 +10,45 @@ from .synthetic_features import SyntheticConfig
 from .utils import VALID_PERMUTATION_METRICS, detect_cuda_available
 
 
+def _require_at_least(name: str, value: float, minimum: float) -> None:
+    """Raise ConfigError unless value >= minimum.
+
+    Shared by the several Config.__post_init__ checks of the form "field
+    must be >= N", which otherwise differ only in the field name, the
+    bound, and the comparison operator -- this covers the ">=" (inclusive
+    lower bound) cases; see `_require_greater_than` for the strict "> N"
+    cases.
+
+    Args:
+        name: Dotted field name as it should appear in the error message,
+            e.g. "bootstrap_config.n_bootstrap".
+        value: The value being validated.
+        minimum: The inclusive lower bound.
+
+    Raises:
+        ConfigError: If value < minimum.
+    """
+    if value < minimum:
+        raise ConfigError(f"{name} must be >= {minimum}, got {value}")
+
+
+def _require_greater_than(name: str, value: float, lower_bound: float) -> None:
+    """Raise ConfigError unless value > lower_bound.
+
+    See `_require_at_least` for the inclusive-bound counterpart.
+
+    Args:
+        name: Dotted field name as it should appear in the error message.
+        value: The value being validated.
+        lower_bound: The exclusive lower bound.
+
+    Raises:
+        ConfigError: If value <= lower_bound.
+    """
+    if value <= lower_bound:
+        raise ConfigError(f"{name} must be > {lower_bound}, got {value}")
+
+
 @dataclass
 class OptunaConfig:
     """Configuration for Optuna hyperparameter tuning."""
@@ -172,37 +211,30 @@ class Config:
                 f"output_format must be one of {valid_formats}, "
                 f"got {self.output_format!r}"
             )
-        if self.bootstrap_config.n_bootstrap < 0:
-            raise ConfigError(
-                "bootstrap_config.n_bootstrap must be >= 0, got"
-                f" {self.bootstrap_config.n_bootstrap}"
-            )
+        _require_at_least(
+            "bootstrap_config.n_bootstrap", self.bootstrap_config.n_bootstrap, 0
+        )
         if not 0 < self.bootstrap_config.sample_frac <= 1.0:
             raise ConfigError(
                 "bootstrap_config.sample_frac must be in (0, 1], got"
                 f" {self.bootstrap_config.sample_frac}"
             )
-        if self.residual_config.residual_corr_threshold <= 0:
-            raise ConfigError(
-                "residual_config.residual_corr_threshold must be > 0, got"
-                f" {self.residual_config.residual_corr_threshold}"
-            )
-        if self.n_permutations < 1:
-            raise ConfigError(f"n_permutations must be >= 1, got {self.n_permutations}")
-        if self.shap_sample_size is not None and self.shap_sample_size < 1:
-            raise ConfigError(
-                f"shap_sample_size must be >= 1, got {self.shap_sample_size}"
-            )
-        if self.synthetic_config.mi_threshold < 0:
-            raise ConfigError(
-                "synthetic_config.mi_threshold must be >= 0, got"
-                f" {self.synthetic_config.mi_threshold}"
-            )
-        if self.synthetic_config.interaction_top_n < 1:
-            raise ConfigError(
-                "synthetic_config.interaction_top_n must be >= 1, got"
-                f" {self.synthetic_config.interaction_top_n}"
-            )
+        _require_greater_than(
+            "residual_config.residual_corr_threshold",
+            self.residual_config.residual_corr_threshold,
+            0,
+        )
+        _require_at_least("n_permutations", self.n_permutations, 1)
+        if self.shap_sample_size is not None:
+            _require_at_least("shap_sample_size", self.shap_sample_size, 1)
+        _require_at_least(
+            "synthetic_config.mi_threshold", self.synthetic_config.mi_threshold, 0
+        )
+        _require_at_least(
+            "synthetic_config.interaction_top_n",
+            self.synthetic_config.interaction_top_n,
+            1,
+        )
         if (
             self.permutation_metric is not None
             and self.permutation_metric not in VALID_PERMUTATION_METRICS
