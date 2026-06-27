@@ -29,6 +29,7 @@ Automated feature selection using XGBoost, SHAP, and Optuna. Give it a CSV and a
 - [SHAP interaction values](#shap-interaction-values)
 - [Class imbalance warning](#class-imbalance-warning)
 - [Bootstrap importance stability (opt-in)](#bootstrap-importance-stability-opt-in)
+- [Residual correlation diagnostics (opt-in)](#residual-correlation-diagnostics-opt-in)
 - [Feature-group importance](#feature-group-importance)
 - [Development](#development)
 
@@ -153,6 +154,7 @@ Results are sorted by SHAP importance (descending).
 | `reason` | str | Plain-English explanation. Empty if `Keep` |
 | `shap_importance_mean` *(optional)* | float | Mean SHAP importance across bootstrap refits. Only present when `--n-bootstrap` > 0 |
 | `shap_importance_std` *(optional)* | float | Std dev of SHAP importance across bootstrap refits — higher means a less stable ranking. Only present when `--n-bootstrap` > 0 |
+| `residual_correlation` *(optional)* | float | Pearson correlation between the feature's raw values and the model's prediction residuals on the held-out test set. Only present when `--check-residuals` is set. NaN for non-numeric features |
 
 Example output:
 
@@ -199,6 +201,8 @@ customer_id   0.0512           0.041                   0.061               Cauti
 | `--imbalance-threshold` | No | `0.1` | Warn if the minority class fraction (binary/multiclass) falls below this |
 | `--n-bootstrap` | No | `0` | Number of bootstrap resamples to refit and assess SHAP importance ranking stability. `0` disables this feature |
 | `--bootstrap-sample-frac` | No | `1.0` | Fraction of combined train+val rows sampled (with replacement) per bootstrap iteration |
+| `--check-residuals` | No | `False` | Compute per-feature correlation with model prediction residuals on the held-out test set (opt-in) |
+| `--residual-corr-threshold` | No | `0.3` | Flag a feature whose \|correlation with residuals\| exceeds this. Only used when `--check-residuals` is set |
 | `--test-size` | No | `0.2` | Fraction of the *full* dataset held out as the final test set. Never used to fit any model; used for importance evaluation and leakage statistics |
 | `--val-size` | No | `0.2` | Fraction of the *remaining* train+val pool (after `--test-size` is removed) used for validation during Optuna tuning |
 | `--random-seed` | No | `42` | Random seed for reproducibility |
@@ -317,6 +321,47 @@ treeshaker --input data.csv --target churn --task binary --n-bootstrap 30
 This adds two columns to the output: `shap_importance_mean` and `shap_importance_std`, the mean and standard deviation of each feature's SHAP importance across the `n_bootstrap` refits. A high `shap_importance_std` relative to `shap_importance_mean` signals a feature whose importance ranking isn't stable and shouldn't be trusted from the single main fit alone.
 
 By default `n_bootstrap` is `0`, so this is fully opt-in and the output schema is unchanged unless you ask for it.
+
+## Residual correlation diagnostics (opt-in)
+
+SHAP, permutation importance, and mutual information all describe a feature's importance to the model from different angles, but none of them look at the model's *prediction errors*. A feature can rank as unimportant on all three signals and still correlate with where the model is systematically wrong — for example a non-linear relationship the tree model under-uses, or an interaction effect that none of the single-feature importance metrics capture. If a feature flagged `Drop` actually correlates with the model's residuals, that contradicts the importance-based case for dropping it and is worth surfacing before acting on the recommendation. This is also useful on its own for regression/forecasting: residual correlation with a feature can reveal heteroscedasticity (the model's error variance depends on that feature's value), independent of any Drop/Keep decision.
+
+Pass `--check-residuals` (or set `check_residuals=True` in `Config`) to compute, for each numeric feature, the Pearson correlation between its raw values in the held-out `test` set and the model's per-row prediction residual. This is **opt-in and off by default**, matching the project's convention for extra, more expensive or more situational checks (`--skip-leakage-check`, `--shap-interactions`, `--n-bootstrap`).
+
+**What "residual" means per task** (classification has no single right answer here, so the definition is a documented choice, not a universal one):
+
+- **regression** — the signed residual, `y_true - y_pred`. Preserves direction, so correlation with a feature also hints at *which way* the model is biased over that feature's range, in addition to revealing heteroscedasticity.
+- **binary** — absolute calibration error in probability space, `|y_true - predict_proba(X)[:, 1]|`. There's no meaningful sign to a classification error, so magnitude is used: how far the predicted probability of the positive class was from the actual outcome.
+- **multiclass** — `1 - predict_proba(X)[true_class]`, i.e. one minus the probability mass the model assigned to the class that actually occurred. `0` means the model was fully confident and correct; values near `1` mean the model assigned almost no probability to the true outcome.
+
+Non-numeric features are skipped (matching the existing pattern in leakage detection's target-correlation check), and their `residual_correlation` is `NaN`.
+
+A feature is flagged when `|residual_correlation| >= --residual-corr-threshold` (default `0.3`). What happens next depends on the feature's existing recommendation:
+
+- **If the feature was flagged `Drop`** by `HarmDetector`: the recommendation is **downgraded to `Caution`**, and a note is appended to `reason`, e.g. *"However, this feature correlates with model residuals (r=0.42), suggesting the model may not be using it effectively — consider testing with a different model or feature transformation before dropping."* The rationale for downgrading rather than leaving it as an informational-only note on a `Drop` row: a `Drop` recommendation is the project's strongest, most actionable signal, and residual correlation is direct evidence *contradicting* the basis for that call (SHAP/permutation/MI all say "unused," but the residual signal says "the model's errors still depend on this feature somehow"). Leaving the label at `Drop` next to a warning that disputes it risks the warning being skimmed past; downgrading to `Caution` forces a second look before the feature is dropped.
+- **If the feature was not flagged `Drop`** (i.e. `Caution` or `Keep`): the note is appended to `reason` purely informationally — the recommendation tier is unchanged. There's no contradiction to resolve here; it's just additional diagnostic information about a feature the pipeline isn't already recommending against.
+
+```bash
+treeshaker --input data.csv --target price --task regression --check-residuals --residual-corr-threshold 0.25
+```
+
+```python
+from treeshaker import FeatureSelectionPipeline, Config
+from treeshaker.residual_diagnostics import ResidualConfig
+
+config = Config(
+    input_file="data.csv",
+    target_column="price",
+    task="regression",
+    check_residuals=True,
+    residual_config=ResidualConfig(residual_corr_threshold=0.25),
+)
+pipeline = FeatureSelectionPipeline(config)
+results = pipeline.run()
+print(results[["feature_name", "recommendation", "residual_correlation"]])
+```
+
+When `--check-residuals` is off (the default), there is zero behavior change: no new column, no schema change, no extra computation.
 
 ## Feature-group importance
 

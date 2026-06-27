@@ -4,6 +4,7 @@ from .config import BootstrapConfig, Config, OptunaConfig, XGBoostConfig
 from .exceptions import ConfigError, TreeShakerError, ValidationError
 from .leakage_detection import LeakageConfig, LeakageDetector
 from .pipeline import FeatureSelectionPipeline
+from .residual_diagnostics import ResidualConfig
 
 __version__ = "0.1.0"
 
@@ -15,6 +16,7 @@ __all__ = [
     "BootstrapConfig",
     "LeakageConfig",
     "LeakageDetector",
+    "ResidualConfig",
     "TreeShakerError",
     "ValidationError",
     "ConfigError",

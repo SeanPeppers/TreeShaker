@@ -17,6 +17,11 @@ from .importance import (
     compute_shap_interactions,
 )
 from .leakage_detection import LeakageDetector
+from .residual_diagnostics import (
+    compute_residual_correlation,
+    compute_residuals,
+    flag_residual_correlated_features,
+)
 from .utils import check_class_imbalance, get_metric_fn, load_csv, save_results
 
 
@@ -391,6 +396,17 @@ class FeatureSelectionPipeline:
             `<output_stem>_interactions.csv`, and made available on
             self.interactions. This does not change the shape or schema
             of the returned DataFrame.
+
+            If config.check_residuals is True, a residual_correlation
+            column is added (Pearson correlation between each feature's raw
+            values and the model's prediction residuals on the held-out
+            test set; see residual_diagnostics.py for the per-task
+            definition of "residual"). When a feature's residual
+            correlation exceeds config.residual_config.residual_corr_threshold:
+            if it was flagged "Drop", the recommendation is downgraded to
+            "Caution" and a plain-English note is appended to its reason;
+            otherwise the note is appended informationally without changing
+            the recommendation tier.
         """
         self.load_data()
         if self.train_data is None or self.val_data is None or self.test_data is None:
@@ -458,33 +474,76 @@ class FeatureSelectionPipeline:
             shap_importance=shap_importance,
         )
 
+        residual_correlation = None
+        residual_notes: dict[str, str] = {}
+        if self.config.check_residuals:
+            residuals = compute_residuals(
+                model=self.model,
+                data=self.test_data,
+                target_column=self.config.target_column,
+                feature_names=self.feature_names,
+                task=self.config.task,
+            )
+            residual_correlation = compute_residual_correlation(
+                data=self.test_data,
+                feature_names=self.feature_names,
+                residuals=residuals,
+            )
+            residual_notes = flag_residual_correlated_features(
+                feature_names=self.feature_names,
+                residual_correlation=residual_correlation,
+                config=self.config.residual_config,
+            )
+
         recommendations = []
         reasons = []
         for i, feature in enumerate(self.feature_names):
             lk_warnings = leakage_warnings[feature]
+            residual_note = residual_notes.get(feature, "")
 
             if is_harmful[i] and lk_warnings:
-                recommendations.append("Drop")
+                recommendation = "Drop"
                 all_reasons = [harm_reasons[i], *lk_warnings]
                 numbered = " ".join(
                     f"({j}) {r}" for j, r in enumerate(all_reasons, start=1)
                 )
-                reasons.append(f"{len(all_reasons)} issues found — " + numbered)
+                reason = f"{len(all_reasons)} issues found — " + numbered
             elif is_harmful[i]:
-                recommendations.append("Drop")
-                reasons.append(harm_reasons[i])
+                recommendation = "Drop"
+                reason = harm_reasons[i]
             elif lk_warnings:
-                recommendations.append("Caution")
+                recommendation = "Caution"
                 if len(lk_warnings) > 1:
                     numbered = " ".join(
                         f"({j}) {r}" for j, r in enumerate(lk_warnings, start=1)
                     )
-                    reasons.append(f"{len(lk_warnings)} issues found — " + numbered)
+                    reason = f"{len(lk_warnings)} issues found — " + numbered
                 else:
-                    reasons.append(lk_warnings[0])
+                    reason = lk_warnings[0]
             else:
-                recommendations.append("Keep")
-                reasons.append("")
+                recommendation = "Keep"
+                reason = ""
+
+            if recommendation == "Drop" and residual_note:
+                # Residual evidence contradicts the Drop call (the feature
+                # correlates with where the model is systematically wrong,
+                # even though SHAP/permutation/MI rank it low). Downgrading
+                # to Caution is more honest than keeping a "Drop" label that
+                # the residual signal disputes -- it avoids over-trusting a
+                # recommendation that has direct evidence against it, while
+                # still telling the user the original harm/leakage reasoning.
+                recommendation = "Caution"
+                reason = f"{reason} {residual_note}".strip()
+            elif residual_note:
+                # Not a Drop call -- residual correlation is purely
+                # informational here, surfaced via reason without changing
+                # the recommendation tier.
+                reason = (
+                    f"{reason} {residual_note}".strip() if reason else residual_note
+                )
+
+            recommendations.append(recommendation)
+            reasons.append(reason)
 
         result_columns: dict[str, Any] = {
             "feature_name": self.feature_names,
@@ -500,6 +559,9 @@ class FeatureSelectionPipeline:
             bootstrap_importances = self._run_bootstrap_importance(best_params)
             result_columns["shap_importance_mean"] = bootstrap_importances.mean(axis=0)
             result_columns["shap_importance_std"] = bootstrap_importances.std(axis=0)
+
+        if self.config.check_residuals:
+            result_columns["residual_correlation"] = residual_correlation
 
         self.results = (
             pd.DataFrame(result_columns)

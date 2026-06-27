@@ -8,6 +8,7 @@ from .config import BootstrapConfig, Config, OptunaConfig, XGBoostConfig
 from .exceptions import ConfigError, TreeShakerError
 from .leakage_detection import LeakageConfig
 from .pipeline import FeatureSelectionPipeline
+from .residual_diagnostics import ResidualConfig
 from .utils import VALID_PERMUTATION_METRICS
 
 
@@ -136,6 +137,21 @@ def parse_arguments() -> argparse.Namespace:
         " <output_stem>_interactions.csv.",
     )
     parser.add_argument(
+        "--check-residuals",
+        action="store_true",
+        help="Compute per-feature correlation with model prediction"
+        " residuals on the held-out test set (opt-in). Adds a"
+        " residual_correlation column to the results and annotates 'Drop'"
+        " recommendations that conflict with residual evidence.",
+    )
+    parser.add_argument(
+        "--residual-corr-threshold",
+        type=float,
+        default=0.3,
+        help="Flag a feature whose |correlation with residuals| exceeds"
+        " this value. Only used when --check-residuals is set. (default: 0.3)",
+    )
+    parser.add_argument(
         "--imbalance-threshold",
         type=float,
         default=0.1,
@@ -252,6 +268,10 @@ def main() -> int:
             imbalance_warning_threshold=args.imbalance_threshold,
             verbose=args.verbose,
             skip_tuning=args.skip_tuning,
+            check_residuals=args.check_residuals,
+            residual_config=ResidualConfig(
+                residual_corr_threshold=args.residual_corr_threshold
+            ),
             n_permutations=args.n_permutations,
             permutation_metric=args.permutation_metric,
         )
