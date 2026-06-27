@@ -197,6 +197,14 @@ customer_id   0.0512           0.041                   0.061               Cauti
 
 ---
 
+## Error handling
+
+TreeShaker validates common input mistakes up front and reports them in
+plain English instead of a raw traceback — for example, a missing input
+file, an empty or malformed CSV, a target column with no non-null values,
+or a `--test-size` too small to stratify the validation split. All of
+these exit with code `1` and a one-line, actionable error message.
+
 ## Supported task types
 
 | Task | Target column | Evaluation metric |

@@ -1,6 +1,7 @@
 """Utility functions for TreeShaker."""
 
 import logging
+from pathlib import Path
 
 import pandas as pd
 from sklearn.metrics import accuracy_score, mean_squared_error, roc_auc_score
@@ -109,22 +110,50 @@ def load_csv(
         A tuple of (train_df, val_df), both including the target column.
 
     Raises:
-        ValidationError: If the target column is missing or incompatible with
-            the task.
+        ValidationError: If the input file is missing, empty, unreadable as
+            CSV, the target column is missing or incompatible with the task,
+            the target column has no non-null values, or there are too few
+            rows to perform a stratified split.
     """
     logger = logging.getLogger(__name__)
     logger.info(f"Loading data from {filepath}")
-    df = pd.read_csv(filepath)
+
+    if not Path(filepath).exists():
+        raise ValidationError(
+            f"Input file not found: '{filepath}'. Check the path and try again."
+        )
+
+    try:
+        df = pd.read_csv(filepath)
+    except (pd.errors.EmptyDataError, pd.errors.ParserError) as exc:
+        raise ValidationError(
+            f"Input file '{filepath}' is empty or not valid CSV."
+        ) from exc
+
     logger.info(f"Loaded {len(df)} rows, {len(df.columns)} columns")
     validate_target(df, target_column, task)
     df = df.dropna(subset=[target_column])
+    if df.empty:
+        raise ValidationError(
+            f"Target column {target_column!r} has no non-null values —"
+            " nothing to train on."
+        )
     stratify = df[target_column] if task in ("binary", "multiclass") else None
-    train_df, val_df = train_test_split(
-        df,
-        test_size=test_size,
-        random_state=random_seed,
-        stratify=stratify,
-    )
+    try:
+        train_df, val_df = train_test_split(
+            df,
+            test_size=test_size,
+            random_state=random_seed,
+            stratify=stratify,
+        )
+    except ValueError as exc:
+        if stratify is not None:
+            raise ValidationError(
+                "Not enough data to perform a stratified train/validation"
+                f" split with test_size={test_size}: {exc} Try providing"
+                " more data or adjusting --test-size."
+            ) from exc
+        raise
     logger.info(f"Split: {len(train_df)} train, {len(val_df)} validation")
     return train_df.reset_index(drop=True), val_df.reset_index(drop=True)
 
