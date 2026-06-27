@@ -292,6 +292,8 @@ A feature is flagged as harmful if **either** condition is true:
 
 Both thresholds are configurable. Raise them to be more aggressive about flagging features; lower them to only flag the most clearly useless ones.
 
+**Under severe class imbalance** (see [Class imbalance warning](#class-imbalance-warning) below), permutation importance collapses toward zero for *every* feature — shuffling barely moves an already-insensitive metric, regardless of how much the model actually relies on the feature. If low permutation importance alone were still enough to flag harm, every feature in a severely imbalanced dataset would get marked `Drop`, including the model's most important driver. So when severe imbalance is detected, low permutation importance alone no longer flags a feature as harmful — SHAP importance must *also* be low (i.e. both signals must agree). SHAP remains reliable under imbalance, so it's trusted as the fallback signal. This only changes behavior when severe imbalance is actually detected; balanced datasets see no change.
+
 ## Leakage detection
 
 Seven independent checks flag features that may be causing data leakage or are otherwise logically suspect. A feature can trigger more than one.
@@ -324,7 +326,7 @@ Exempted features aren't given a free pass entirely — instead they get a struc
 
 Under extreme class imbalance (e.g. a 99%/1% binary target), accuracy and even ROC-AUC can barely move regardless of which feature is shuffled — making permutation importance unreliable. Features can look unimportant simply because the metric is insensitive to what's being shuffled.
 
-TreeShaker **automatically** checks the target distribution for binary and multiclass tasks (not applicable to regression) after loading data — no flag needed to enable this. If the minority class makes up less than `--imbalance-threshold` (default `0.1`, i.e. 10%) of the target, a plain-English warning is logged. This is visibility only — it does not block the pipeline or change the output schema. If you see this warning, consider interpreting permutation importance cautiously, or evaluating with a metric more sensitive to the minority class (e.g. PR-AUC or F1).
+TreeShaker **automatically** checks the target distribution for binary and multiclass tasks (not applicable to regression) after loading data — no flag needed to enable this. If the minority class makes up less than `--imbalance-threshold` (default `0.1`, i.e. 10%) of the target, a plain-English warning is logged. This is not purely informational: it also changes harm detection's behavior (see [Harm detection](#harm-detection)) — when severe imbalance is detected, low permutation importance alone is no longer enough to mark a feature `Drop`, since permutation importance is structurally unreliable in this regime. A second warning is logged when this fallback kicks in: *"Severe class imbalance detected — permutation importance threshold is being skipped for harm detection; relying on SHAP importance alone for this run."* It does not block the pipeline or change the output schema. If you see this warning, also consider evaluating with a metric more sensitive to the minority class (e.g. PR-AUC or F1).
 
 ## SHAP interaction values
 

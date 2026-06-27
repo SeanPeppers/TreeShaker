@@ -669,3 +669,73 @@ def test_pipeline_synthesis_mi_threshold_filters_weak_candidates(tmp_path):
     pipeline.run()
 
     assert pipeline.suggested_features == []
+
+
+def test_pipeline_severe_imbalance_keeps_high_shap_low_perm_feature(tmp_path):
+    """Regression test for the fraud-detection bug: on a severely
+    imbalanced binary dataset, a feature with strong SHAP signal but
+    near-zero permutation importance (because permutation importance is
+    structurally unreliable under severe imbalance) must not be marked
+    Drop. Mirrors the real-world V4/Credit-Card-Fraud finding."""
+    rng = np.random.default_rng(7)
+    n = 600
+    # Severe imbalance: ~1% positive rate.
+    target = (rng.random(n) < 0.01).astype(int)
+    feature_0 = target * 5.0 + rng.normal(scale=0.5, size=n)
+    feature_1 = rng.normal(size=n)  # pure noise
+
+    df = pd.DataFrame(
+        {"feature_0": feature_0, "feature_1": feature_1, "target": target}
+    )
+    path = tmp_path / "imbalanced.csv"
+    df.to_csv(path, index=False)
+
+    config = Config(
+        input_file=str(path),
+        target_column="target",
+        task="binary",
+        output_file=str(tmp_path / "results.csv"),
+        output_format="csv",
+        xgboost_config=XGBoostConfig(max_depth=2, extra_params={"n_estimators": 20}),
+        skip_tuning=True,
+    )
+    pipeline = FeatureSelectionPipeline(config)
+
+    # Force SHAP importance to clearly mark feature_0 as important and
+    # feature_1 as unimportant (deterministic, instead of relying on the
+    # real SHAP computation to reproduce a fragile separation on a tiny
+    # synthetic dataset), and force permutation importance to collapse
+    # toward zero for both features, as actually happens under severe
+    # imbalance with accuracy/ROC-AUC-based metrics.
+    with (
+        patch("treeshaker.pipeline.compute_permutation_importance") as mock_perm,
+        patch("treeshaker.pipeline.compute_shap_importance") as mock_shap,
+    ):
+        mock_perm.return_value = (
+            np.array([0.0001, 0.0001]),
+            np.array([0.0, 0.0]),
+        )
+        mock_shap.return_value = np.array([0.816, 0.002])
+        results = pipeline.run()
+
+    assert pipeline.severe_class_imbalance is True
+
+    feature_0_row = results[results["feature_name"] == "feature_0"].iloc[0]
+    feature_1_row = results[results["feature_name"] == "feature_1"].iloc[0]
+
+    # feature_0 has strong SHAP signal -> must be kept despite near-zero
+    # permutation importance under severe imbalance. This mirrors the real
+    # V4 finding on the Credit Card Fraud Detection dataset.
+    assert feature_0_row["recommendation"] != "Drop"
+
+    # feature_1 has low SHAP AND low perm importance -> still correctly Drop.
+    assert feature_1_row["recommendation"] == "Drop"
+
+
+def test_pipeline_balanced_dataset_unaffected_by_imbalance_logic(binary_csv, tmp_path):
+    """On a balanced dataset, severe_class_imbalance must be False and
+    behavior must be identical to before this fix."""
+    config = make_fast_config(binary_csv, "binary", tmp_path)
+    pipeline = FeatureSelectionPipeline(config)
+    pipeline.run()
+    assert pipeline.severe_class_imbalance is False
