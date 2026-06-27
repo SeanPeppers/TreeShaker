@@ -103,6 +103,15 @@ class Config:
     "accuracy", "neg_mse", or "wape". None (default) preserves the
     automatic per-task default: ROC-AUC for binary, accuracy for
     multiclass, negative MSE for regression."""
+    shap_sample_size: int | None = None
+    """Optional row cap for SHAP importance computation. When set and
+    smaller than the number of available rows, a random sample of this
+    many rows (drawn with random_seed) is used to compute SHAP values
+    instead of the full dataset, which can substantially speed up SHAP on
+    large datasets. Importance is still reported over the full feature
+    set; only the row count used to estimate it is reduced. None
+    (default) uses all rows, matching prior behavior -- no change unless
+    explicitly set."""
 
     def __post_init__(self) -> None:
         """Validate configuration values."""
@@ -142,6 +151,10 @@ class Config:
             )
         if self.n_permutations < 1:
             raise ConfigError(f"n_permutations must be >= 1, got {self.n_permutations}")
+        if self.shap_sample_size is not None and self.shap_sample_size < 1:
+            raise ConfigError(
+                f"shap_sample_size must be >= 1, got {self.shap_sample_size}"
+            )
         if (
             self.permutation_metric is not None
             and self.permutation_metric not in VALID_PERMUTATION_METRICS

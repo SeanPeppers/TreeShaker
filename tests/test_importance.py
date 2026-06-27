@@ -80,6 +80,91 @@ def test_shap_importance_regression(fitted_regression_model):
     assert (importance >= 0).all()
 
 
+def test_shap_importance_sample_size_none_uses_all_rows(
+    fitted_binary_model, monkeypatch
+):
+    """sample_size=None (the default) preserves full-dataset behavior."""
+    model, df, feature_names = fitted_binary_model
+    seen_rows = []
+    original_tree_explainer = __import__("shap").TreeExplainer
+
+    class _SpyExplainer:
+        def __init__(self, m):
+            self._inner = original_tree_explainer(m)
+
+        def shap_values(self, X):
+            seen_rows.append(len(X))
+            return self._inner.shap_values(X)
+
+    monkeypatch.setattr("treeshaker.importance.shap.TreeExplainer", _SpyExplainer)
+    compute_shap_importance(model, df, feature_names, sample_size=None)
+    assert seen_rows == [len(df)]
+
+
+def test_shap_importance_sample_size_reduces_rows_passed_to_explainer(
+    fitted_binary_model, monkeypatch
+):
+    """A sample_size smaller than the dataset reduces rows seen by the explainer."""
+    model, df, feature_names = fitted_binary_model
+    seen_rows = []
+    original_tree_explainer = __import__("shap").TreeExplainer
+
+    class _SpyExplainer:
+        def __init__(self, m):
+            self._inner = original_tree_explainer(m)
+
+        def shap_values(self, X):
+            seen_rows.append(len(X))
+            return self._inner.shap_values(X)
+
+    monkeypatch.setattr("treeshaker.importance.shap.TreeExplainer", _SpyExplainer)
+    compute_shap_importance(model, df, feature_names, sample_size=20, random_seed=42)
+    assert seen_rows == [20]
+
+
+def test_shap_importance_sample_size_covers_all_features(fitted_binary_model):
+    """Sampling rows still returns one importance value per input feature."""
+    model, df, feature_names = fitted_binary_model
+    importance = compute_shap_importance(
+        model, df, feature_names, sample_size=20, random_seed=42
+    )
+    assert importance.shape == (len(feature_names),)
+    assert (importance >= 0).all()
+
+
+def test_shap_importance_sample_size_larger_than_data_uses_all_rows(
+    fitted_binary_model, monkeypatch
+):
+    """A sample_size >= row count behaves like no sampling (no shrinkage)."""
+    model, df, feature_names = fitted_binary_model
+    seen_rows = []
+    original_tree_explainer = __import__("shap").TreeExplainer
+
+    class _SpyExplainer:
+        def __init__(self, m):
+            self._inner = original_tree_explainer(m)
+
+        def shap_values(self, X):
+            seen_rows.append(len(X))
+            return self._inner.shap_values(X)
+
+    monkeypatch.setattr("treeshaker.importance.shap.TreeExplainer", _SpyExplainer)
+    compute_shap_importance(model, df, feature_names, sample_size=10_000)
+    assert seen_rows == [len(df)]
+
+
+def test_shap_importance_sample_size_reproducible(fitted_binary_model):
+    """Same random_seed yields identical sampled-row importance results."""
+    model, df, feature_names = fitted_binary_model
+    importance_a = compute_shap_importance(
+        model, df, feature_names, sample_size=20, random_seed=7
+    )
+    importance_b = compute_shap_importance(
+        model, df, feature_names, sample_size=20, random_seed=7
+    )
+    np.testing.assert_array_equal(importance_a, importance_b)
+
+
 def test_permutation_importance_shape(fitted_binary_model):
     model, df, feature_names = fitted_binary_model
     metric_fn = get_metric_fn("binary")

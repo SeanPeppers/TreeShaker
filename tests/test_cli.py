@@ -170,3 +170,60 @@ def test_main_end_to_end_with_n_permutations_and_metric(binary_csv, tmp_path):
     assert result == 0
     df = pd.read_csv(output)
     assert "permutation_importance_std" in df.columns
+
+
+def test_parse_arguments_shap_sample_size_default_none():
+    with patch(
+        "sys.argv",
+        ["treeshaker", "--input", "f.csv", "--target", "y", "--task", "regression"],
+    ):
+        args = parse_arguments()
+    assert args.shap_sample_size is None
+
+
+def test_parse_arguments_shap_sample_size():
+    with patch(
+        "sys.argv",
+        [
+            "treeshaker",
+            "--input",
+            "f.csv",
+            "--target",
+            "y",
+            "--task",
+            "regression",
+            "--shap-sample-size",
+            "100",
+        ],
+    ):
+        args = parse_arguments()
+    assert args.shap_sample_size == 100
+
+
+def test_main_end_to_end_with_shap_sample_size(binary_csv, tmp_path):
+    output = str(tmp_path / "results.csv")
+    with patch(
+        "sys.argv",
+        [
+            "treeshaker",
+            "--input",
+            binary_csv,
+            "--target",
+            "target",
+            "--task",
+            "binary",
+            "--output",
+            output,
+            "--optuna-trials",
+            "3",
+            "--optuna-timeout",
+            "30",
+            "--shap-sample-size",
+            "5",
+        ],
+    ):
+        result = main()
+    assert result == 0
+    df = pd.read_csv(output)
+    assert "shap_importance" in df.columns
+    assert len(df) == 10

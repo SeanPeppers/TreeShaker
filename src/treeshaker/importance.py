@@ -14,6 +14,8 @@ def compute_shap_importance(
     model: Any,
     data: pd.DataFrame,
     feature_names: list[str],
+    sample_size: int | None = None,
+    random_seed: int = 42,
 ) -> np.ndarray:
     """
     Compute mean absolute SHAP values for each feature.
@@ -25,13 +27,24 @@ def compute_shap_importance(
         model: A fitted XGBoost model (XGBClassifier or XGBRegressor).
         data: Feature DataFrame (no target column) used for explanation.
         feature_names: Ordered list of feature column names.
+        sample_size: If set and smaller than len(data), a random sample of
+            this many rows is used for the (potentially expensive) SHAP
+            computation instead of the full dataset. Importance is still
+            reported over the full feature set; only the row count used to
+            estimate it is reduced. None (default) uses all rows, matching
+            prior behavior.
+        random_seed: Seed used for row sampling when sample_size is set.
+            Ignored otherwise.
 
     Returns:
         Array of shape (n_features,) with mean absolute SHAP value per feature.
     """
     logger.info("Computing SHAP importance")
+    X = data[feature_names]
+    if sample_size is not None and sample_size < len(X):
+        X = X.sample(n=sample_size, random_state=random_seed)
     explainer = shap.TreeExplainer(model)
-    shap_values = explainer.shap_values(data[feature_names])
+    shap_values = explainer.shap_values(X)
 
     if isinstance(shap_values, list):
         # Older shap versions: multiclass returns a list of arrays, one per
