@@ -26,6 +26,7 @@ Automated feature selection using XGBoost, SHAP, and Optuna. Give it a CSV and a
 - [Supported task types](#supported-task-types)
 - [Harm detection](#harm-detection)
 - [Leakage detection](#leakage-detection)
+- [Class imbalance warning](#class-imbalance-warning)
 - [Development](#development)
 
 ## How it works
@@ -178,6 +179,7 @@ customer_id   0.0512           0.041                   Caution         Column na
 | `--target-corr-threshold` | No | `0.95` | Flag features whose correlation with the target exceeds this |
 | `--dominant-shap-fraction` | No | `0.7` | Flag a feature if it accounts for more than this fraction of total SHAP importance |
 | `--skip-leakage-check` | No | `False` | Disable all leakage/logical-error checks |
+| `--imbalance-threshold` | No | `0.1` | Warn if the minority class fraction (binary/multiclass) falls below this |
 | `--test-size` | No | `0.2` | Fraction of data used for validation |
 | `--random-seed` | No | `42` | Random seed for reproducibility |
 | `--verbose` | No | `False` | Enable debug logging |
@@ -215,6 +217,12 @@ Six independent checks flag features that may be causing data leakage or are oth
 | Suspicious names | Matches patterns like `_id`, `future_`, `label`, `target` | Likely an identifier or future-leaking column |
 
 Leakage warnings produce a `Caution` recommendation on their own; combined with harm detection they escalate to `Drop`. Disable all six checks with `--skip-leakage-check`.
+
+## Class imbalance warning
+
+Under extreme class imbalance (e.g. a 99%/1% binary target), accuracy and even ROC-AUC can barely move regardless of which feature is shuffled — making permutation importance unreliable. Features can look unimportant simply because the metric is insensitive to what's being shuffled.
+
+TreeShaker checks the target distribution for binary and multiclass tasks (not applicable to regression) after loading data. If the minority class makes up less than `--imbalance-threshold` (default `0.1`, i.e. 10%) of the target, a plain-English warning is logged. This is visibility only — it does not block the pipeline or change the output schema. If you see this warning, consider interpreting permutation importance cautiously, or evaluating with a metric more sensitive to the minority class (e.g. PR-AUC or F1).
 
 ## Development
 

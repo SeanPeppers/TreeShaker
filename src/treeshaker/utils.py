@@ -37,6 +37,58 @@ def validate_target(df: pd.DataFrame, target_column: str, task: str) -> None:
             raise ValidationError("Regression task requires a numeric target column")
 
 
+def check_class_imbalance(
+    df: pd.DataFrame,
+    target_column: str,
+    task: str,
+    imbalance_warning_threshold: float = 0.1,
+) -> str | None:
+    """Check for severe class imbalance that could undermine permutation importance.
+
+    Under extreme class imbalance, metrics like ROC-AUC and accuracy can stay
+    nearly flat regardless of which feature is shuffled, which makes
+    permutation importance unreliable — features can look unimportant simply
+    because the metric barely moves. This check only applies to binary and
+    multiclass tasks; regression has no notion of class balance.
+
+    Args:
+        df: Input DataFrame.
+        target_column: Name of the target column.
+        task: One of "binary", "multiclass", or "regression".
+        imbalance_warning_threshold: Minority class fraction below which a
+            warning is returned. Default 0.1 (10%).
+
+    Returns:
+        A plain-English warning string if the minority class fraction is
+        below imbalance_warning_threshold, otherwise None. Always None for
+        the "regression" task.
+    """
+    if task not in ("binary", "multiclass"):
+        return None
+
+    class_counts = df[target_column].value_counts(normalize=True)
+    if class_counts.empty:
+        return None
+
+    minority_fraction = class_counts.min()
+    if minority_fraction >= imbalance_warning_threshold:
+        return None
+
+    minority_class = class_counts.idxmin()
+    pct = minority_fraction * 100
+    return (
+        f"Severe class imbalance detected: the minority class"
+        f" ({minority_class!r}) makes up only {pct:.1f}% of the target,"
+        f" below the {imbalance_warning_threshold * 100:.0f}% warning"
+        f" threshold. Under this level of imbalance, accuracy and even"
+        f" ROC-AUC can barely move regardless of which feature is shuffled,"
+        f" which makes permutation importance unreliable — features may"
+        f" look unimportant simply because the metric is insensitive."
+        f" Consider using a metric more sensitive to the minority class"
+        f" (e.g. PR-AUC or F1) when interpreting these results."
+    )
+
+
 def load_csv(
     filepath: str,
     target_column: str,

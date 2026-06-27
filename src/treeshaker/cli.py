@@ -92,6 +92,13 @@ def parse_arguments() -> argparse.Namespace:
         help="Disable leakage and logical error detection.",
     )
     parser.add_argument(
+        "--imbalance-threshold",
+        type=float,
+        default=0.1,
+        help="Warn if the minority class fraction (binary/multiclass) falls"
+        " below this. (default: 0.1)",
+    )
+    parser.add_argument(
         "--test-size",
         type=float,
         default=0.2,
@@ -151,6 +158,7 @@ def main() -> int:
             shap_importance_threshold=args.shap_threshold,
             permutation_importance_threshold=args.perm_threshold,
             leakage_config=leakage_config,
+            imbalance_warning_threshold=args.imbalance_threshold,
             verbose=args.verbose,
         )
     except ConfigError as exc:

@@ -9,7 +9,7 @@ from .config import Config
 from .harm_detection import HarmDetector
 from .importance import compute_permutation_importance, compute_shap_importance
 from .leakage_detection import LeakageDetector
-from .utils import get_metric_fn, load_csv, save_results
+from .utils import check_class_imbalance, get_metric_fn, load_csv, save_results
 
 
 class FeatureSelectionPipeline:
@@ -64,6 +64,16 @@ class FeatureSelectionPipeline:
             col for col in self.train_data.columns if col != self.config.target_column
         ]
         self.logger.info(f"Features to evaluate: {len(self.feature_names)}")
+
+        combined = pd.concat([self.train_data, self.val_data], ignore_index=True)
+        imbalance_warning = check_class_imbalance(
+            df=combined,
+            target_column=self.config.target_column,
+            task=self.config.task,
+            imbalance_warning_threshold=self.config.imbalance_warning_threshold,
+        )
+        if imbalance_warning:
+            self.logger.warning(imbalance_warning)
 
     def tune_hyperparams(self) -> dict:
         """

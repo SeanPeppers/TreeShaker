@@ -52,6 +52,7 @@ class Config:
     shap_importance_threshold: float = 0.01
     permutation_importance_threshold: float = 0.05
     leakage_config: LeakageConfig = field(default_factory=LeakageConfig)
+    imbalance_warning_threshold: float = 0.1
     verbose: bool = False
 
     def __post_init__(self) -> None:
