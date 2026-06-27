@@ -304,6 +304,146 @@ def test_non_temporal_feature_not_checked_structurally():
     assert structural_warnings["feature_a"] == []
 
 
+def test_categorical_feature_proxy_for_binary_target_flagged():
+    """A categorical feature that's a near-perfect proxy for a binary
+    target (like the real 'boat' column in the Titanic dataset, which
+    is recorded post-outcome) should be flagged for high association,
+    even though it's non-numeric and the numeric correlation check can't
+    see it."""
+    rng = np.random.default_rng(42)
+    n = 300
+    target = rng.integers(0, 2, n)
+    # proxy maps almost 1:1 to target, with a small amount of noise so
+    # it's not a deterministic mapping.
+    proxy = np.where(target == 1, "boat_assigned", "no_boat").astype(object)
+    noise_idx = rng.choice(n, size=10, replace=False)
+    proxy[noise_idx] = np.where(
+        proxy[noise_idx] == "boat_assigned", "no_boat", "boat_assigned"
+    )
+    df = pd.DataFrame({"boat": proxy, "target": target})
+
+    detector = LeakageDetector()
+    warnings = detector.detect(df, "target", ["boat"], np.array([0.9]), task="binary")
+    assert len(warnings["boat"]) > 0
+    assert "cramer" in warnings["boat"][0].lower()
+
+
+def test_categorical_feature_missing_value_proxy_flagged():
+    """Reproduces the real Titanic 'boat' leakage case: a high-cardinality
+    categorical feature (many distinct boat numbers) that is missing for
+    almost everyone who didn't survive and present for almost everyone
+    who did. Naive Cramer's V on the raw category values is diluted by
+    the many distinct non-null values, but treating NaN as its own
+    category recovers the true signal: presence/absence of a value is
+    itself a near-perfect proxy for the target."""
+    rng = np.random.default_rng(11)
+    n = 400
+    target = rng.integers(0, 2, n)
+    # 20 distinct "boat number" categories, only assigned when target==1.
+    boat_numbers = rng.integers(1, 21, n).astype(object)
+    col = np.where(target == 1, boat_numbers, None)
+    df = pd.DataFrame({"boat": pd.Series(col, dtype=object), "target": target})
+
+    detector = LeakageDetector()
+    warnings = detector.detect(df, "target", ["boat"], np.array([0.9]), task="binary")
+    assert len(warnings["boat"]) > 0
+    assert "cramer" in warnings["boat"][0].lower()
+
+
+def test_categorical_feature_no_association_not_flagged():
+    """A categorical feature with no real relationship to the target
+    should not be flagged."""
+    rng = np.random.default_rng(7)
+    n = 300
+    target = rng.integers(0, 2, n)
+    category = rng.choice(["a", "b", "c"], size=n)
+    df = pd.DataFrame({"category": category, "target": target})
+
+    detector = LeakageDetector()
+    warnings = detector.detect(
+        df, "target", ["category"], np.array([0.1]), task="binary"
+    )
+    assert not any("cramer" in w.lower() for w in warnings["category"])
+
+
+def test_categorical_assoc_threshold_respected():
+    """Raising the threshold above the feature's actual association
+    should stop it from being flagged."""
+    rng = np.random.default_rng(42)
+    n = 300
+    target = rng.integers(0, 2, n)
+    proxy = np.where(target == 1, "boat_assigned", "no_boat").astype(object)
+    noise_idx = rng.choice(n, size=10, replace=False)
+    proxy[noise_idx] = np.where(
+        proxy[noise_idx] == "boat_assigned", "no_boat", "boat_assigned"
+    )
+    df = pd.DataFrame({"boat": proxy, "target": target})
+
+    detector_strict = LeakageDetector(LeakageConfig(categorical_assoc_threshold=0.5))
+    warnings = detector_strict.detect(
+        df, "target", ["boat"], np.array([0.9]), task="binary"
+    )
+    assert len(warnings["boat"]) > 0
+
+    detector_loose = LeakageDetector(
+        LeakageConfig(categorical_assoc_threshold=0.999, dominant_shap_fraction=1.1)
+    )
+    warnings = detector_loose.detect(
+        df, "target", ["boat"], np.array([0.9]), task="binary"
+    )
+    assert len(warnings["boat"]) == 0
+
+
+def test_categorical_feature_proxy_for_multiclass_target_flagged():
+    """The categorical association check should also work for multiclass
+    targets, not just binary."""
+    rng = np.random.default_rng(3)
+    n = 300
+    target = rng.integers(0, 3, n)
+    mapping = {0: "cat_a", 1: "cat_b", 2: "cat_c"}
+    proxy = np.array([mapping[t] for t in target], dtype=object)
+    noise_idx = rng.choice(n, size=10, replace=False)
+    proxy[noise_idx] = rng.choice(list(mapping.values()), size=10)
+    df = pd.DataFrame({"proxy_cat": proxy, "target": target})
+
+    detector = LeakageDetector()
+    warnings = detector.detect(
+        df, "target", ["proxy_cat"], np.array([0.9]), task="multiclass"
+    )
+    assert len(warnings["proxy_cat"]) > 0
+
+
+def test_categorical_association_skipped_for_regression():
+    """Regression tasks are out of scope for this check (documented
+    limitation), so a categorical proxy feature should not be flagged
+    when task='regression'."""
+    rng = np.random.default_rng(42)
+    n = 300
+    target_class = rng.integers(0, 2, n)
+    target = target_class.astype(float) * 10 + rng.normal(0, 0.1, n)
+    proxy = np.where(target_class == 1, "boat_assigned", "no_boat").astype(object)
+    df = pd.DataFrame({"boat": proxy, "target": target})
+
+    detector = LeakageDetector()
+    warnings = detector.detect(
+        df, "target", ["boat"], np.array([0.9]), task="regression"
+    )
+    assert not any("cramer" in w.lower() for w in warnings["boat"])
+
+
+def test_categorical_association_numeric_feature_unaffected():
+    """Numeric features should still only go through the Pearson
+    correlation check, not the categorical association check."""
+    rng = np.random.default_rng(42)
+    base = rng.normal(0, 1, 200)
+    df = pd.DataFrame({"numeric_feat": base, "target": rng.integers(0, 2, 200)})
+    detector = LeakageDetector()
+    warnings = detector.detect(
+        df, "target", ["numeric_feat"], np.array([0.5]), task="binary"
+    )
+    assert not any("cramer" in w.lower() for w in warnings["numeric_feat"])
+
+
 def test_custom_thresholds():
     rng = np.random.default_rng(42)
     base = rng.normal(0, 1, 200)

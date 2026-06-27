@@ -526,6 +526,7 @@ class FeatureSelectionPipeline:
             target_column=self.config.target_column,
             feature_names=self.feature_names,
             shap_importance=shap_importance,
+            task=self.config.task,
         )
         temporal_structure_warnings = leakage_detector.detect_temporal_structure(
             df=combined_data,
