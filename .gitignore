@@ -132,3 +132,7 @@ dmypy.json
 
 # Ruff cache
 .ruff_cache/
+
+# Internal-only notes, never push
+/paper/
+marketing.md
