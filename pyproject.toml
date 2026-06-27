@@ -42,6 +42,13 @@ treeshaker = "treeshaker.cli:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/treeshaker"]
 
+[tool.uv]
+# shap's optional numba/llvmlite dependency has no numpy upper bound on its
+# oldest release, which lets the resolver pick numpy>=2.5 alongside an
+# ancient numba (0.53.1, 2021) that lacks Python 3.13 wheels. Cap numpy so
+# the resolver stays on modern, wheel-available numba/llvmlite releases.
+constraint-dependencies = ["numpy<2.5"]
+
 [tool.ruff]
 target-version = "py313"
 line-length = 88

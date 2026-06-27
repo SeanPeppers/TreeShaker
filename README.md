@@ -214,6 +214,16 @@ pytest
 pytest --cov=treeshaker --cov-report=html
 ```
 
+### Dependency pinning
+
+This project uses [`uv`](https://docs.astral.sh/uv/) to pin exact dependency versions in `uv.lock`, so local installs and CI use the same resolved versions instead of re-resolving "latest" on every run. `uv.lock` is committed and should be regenerated whenever `pyproject.toml` dependencies change:
+
+```bash
+uv lock
+```
+
+Commit the updated `uv.lock` alongside the `pyproject.toml` change.
+
 ### CI
 
 Every push and pull request to `main` runs ruff lint and format checks via GitHub Actions. Merges are blocked if checks fail.
