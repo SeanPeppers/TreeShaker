@@ -1,0 +1,75 @@
+"""Feature harm detection based on importance signals."""
+
+import numpy as np
+
+
+class HarmDetector:
+    """
+    Detect features that are likely to harm model performance.
+
+    A feature is considered harmful if:
+    - Its mean absolute SHAP value is below the SHAP threshold, OR
+    - Its permutation importance is below the permutation threshold.
+
+    Both signals are checked independently; a feature failing either check
+    is flagged as harmful.
+
+    Args:
+        shap_importance_threshold: Features with mean |SHAP| below this
+            value are flagged. Defaults to 0.01.
+        perm_importance_threshold: Features with permutation importance
+            below this value are flagged. Defaults to 0.05.
+    """
+
+    def __init__(
+        self,
+        shap_importance_threshold: float = 0.01,
+        perm_importance_threshold: float = 0.05,
+    ) -> None:
+        self.shap_threshold = shap_importance_threshold
+        self.perm_threshold = perm_importance_threshold
+
+    def flag_harmful_features(
+        self,
+        shap_importance: np.ndarray,
+        perm_importance: np.ndarray,
+    ) -> tuple[np.ndarray, list[str]]:
+        """
+        Determine which features are harmful based on importance scores.
+
+        Args:
+            shap_importance: Array of mean absolute SHAP values, one per feature.
+            perm_importance: Array of permutation importance values, one per feature.
+
+        Returns:
+            A tuple of (is_harmful, harm_reasons) where:
+            - is_harmful is a boolean array, True for harmful features.
+            - harm_reasons is a list of strings describing why each feature
+              was flagged (empty string if the feature is not harmful).
+        """
+        n_features = len(shap_importance)
+        is_harmful = np.zeros(n_features, dtype=bool)
+        harm_reasons: list[str] = []
+
+        for i in range(n_features):
+            reasons = []
+
+            if shap_importance[i] < self.shap_threshold:
+                reasons.append(
+                    f"low SHAP importance"
+                    f" ({shap_importance[i]:.4f} < {self.shap_threshold})"
+                )
+
+            if perm_importance[i] < self.perm_threshold:
+                reasons.append(
+                    f"low permutation importance"
+                    f" ({perm_importance[i]:.4f} < {self.perm_threshold})"
+                )
+
+            if reasons:
+                is_harmful[i] = True
+                harm_reasons.append("; ".join(reasons))
+            else:
+                harm_reasons.append("")
+
+        return is_harmful, harm_reasons

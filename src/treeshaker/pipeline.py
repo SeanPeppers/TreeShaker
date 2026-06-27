@@ -1,0 +1,236 @@
+"""Core feature selection pipeline orchestration."""
+
+import logging
+
+import pandas as pd
+
+from .config import Config
+from .harm_detection import HarmDetector
+from .importance import compute_permutation_importance, compute_shap_importance
+from .utils import get_metric_fn, load_csv, save_results
+
+
+class FeatureSelectionPipeline:
+    """
+    Orchestrates the full TreeShaker feature selection workflow.
+
+    The pipeline runs in the following order:
+    1. Load CSV data and split into train/validation sets.
+    2. Tune XGBoost hyperparameters with Optuna.
+    3. Train the final XGBoost model on tuned hyperparameters.
+    4. Compute SHAP importance for each feature.
+    5. Compute permutation importance for each feature.
+    6. Flag harmful features using both importance signals.
+    7. Save results to CSV or HTML.
+
+    Args:
+        config: A Config instance describing all pipeline settings.
+
+    Example:
+        >>> from treeshaker import FeatureSelectionPipeline, Config
+        >>> config = Config(
+        ...     input_file="data.csv", target_column="price", task="regression"
+        ... )
+        >>> pipeline = FeatureSelectionPipeline(config)
+        >>> results = pipeline.run()
+    """
+
+    def __init__(self, config: Config) -> None:
+        self.config = config
+        self.logger = logging.getLogger(__name__)
+        self.train_data: pd.DataFrame | None = None
+        self.val_data: pd.DataFrame | None = None
+        self.model = None
+        self.feature_names: list[str] = []
+        self.results: pd.DataFrame | None = None
+
+    def load_data(self) -> None:
+        """
+        Load the CSV file and split into train and validation sets.
+
+        Populates self.train_data, self.val_data, and self.feature_names.
+        """
+        self.train_data, self.val_data = load_csv(
+            filepath=self.config.input_file,
+            target_column=self.config.target_column,
+            task=self.config.task,
+            test_size=self.config.test_size,
+            random_seed=self.config.random_seed,
+        )
+        self.feature_names = [
+            col for col in self.train_data.columns if col != self.config.target_column
+        ]
+        self.logger.info(f"Features to evaluate: {len(self.feature_names)}")
+
+    def tune_hyperparams(self) -> dict:
+        """
+        Use Optuna to find the best XGBoost hyperparameters.
+
+        Runs an Optuna study where each trial trains XGBoost on the training
+        set and evaluates on the validation set. The metric depends on the task:
+        - binary: log loss (minimized)
+        - multiclass: log loss (minimized)
+        - regression: MSE (minimized)
+
+        Returns:
+            Dictionary of best XGBoost hyperparameters found by Optuna.
+        """
+        import optuna
+        import xgboost as xgb
+        from sklearn.metrics import log_loss, mean_squared_error
+
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+        cfg = self.config.optuna_config
+        xgb_cfg = self.config.xgboost_config
+        task = self.config.task
+
+        X_train = self.train_data[self.feature_names]
+        y_train = self.train_data[self.config.target_column]
+        X_val = self.val_data[self.feature_names]
+        y_val = self.val_data[self.config.target_column]
+
+        def objective(trial: optuna.Trial) -> float:
+            params = {
+                "max_depth": trial.suggest_int("max_depth", 3, 10),
+                "learning_rate": trial.suggest_float(
+                    "learning_rate", 0.01, 0.3, log=True
+                ),
+                "subsample": trial.suggest_float("subsample", 0.6, 1.0),
+                "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
+                "gamma": trial.suggest_float("gamma", 0.0, 5.0),
+                "min_child_weight": trial.suggest_int("min_child_weight", 1, 10),
+                "random_state": self.config.random_seed,
+                "verbosity": 0,
+            }
+            params.update(xgb_cfg.extra_params)
+
+            if task in ("binary", "multiclass"):
+                objective_str = (
+                    "binary:logistic" if task == "binary" else "multi:softprob"
+                )
+                model = xgb.XGBClassifier(objective=objective_str, **params)
+                model.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=False)
+                preds = model.predict_proba(X_val)
+                if task == "binary":
+                    return log_loss(y_val, preds)
+                return log_loss(y_val, preds)
+            else:
+                model = xgb.XGBRegressor(**params)
+                model.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=False)
+                preds = model.predict(X_val)
+                return mean_squared_error(y_val, preds)
+
+        sampler = optuna.samplers.TPESampler(seed=cfg.seed)
+        study = optuna.create_study(direction="minimize", sampler=sampler)
+        self.logger.info(
+            f"Starting Optuna tuning: {cfg.n_trials} trials, timeout={cfg.timeout}s"
+        )
+        study.optimize(
+            objective,
+            n_trials=cfg.n_trials,
+            timeout=cfg.timeout,
+            show_progress_bar=cfg.show_progress_bar,
+        )
+        self.logger.info(f"Best trial value: {study.best_value:.4f}")
+        return study.best_params
+
+    def train_model(self, best_params: dict) -> None:
+        """
+        Train the final XGBoost model using the best hyperparameters.
+
+        Combines train and validation data for the final fit, giving the
+        model access to as much data as possible before importance analysis.
+
+        Args:
+            best_params: Hyperparameter dict returned by tune_hyperparams().
+        """
+        import xgboost as xgb
+
+        combined = pd.concat([self.train_data, self.val_data], ignore_index=True)
+        X = combined[self.feature_names]
+        y = combined[self.config.target_column]
+
+        params = {
+            **best_params,
+            "random_state": self.config.random_seed,
+            "verbosity": 0,
+        }
+        params.update(self.config.xgboost_config.extra_params)
+
+        if self.config.task in ("binary", "multiclass"):
+            objective_str = (
+                "binary:logistic" if self.config.task == "binary" else "multi:softprob"
+            )
+            self.model = xgb.XGBClassifier(objective=objective_str, **params)
+        else:
+            self.model = xgb.XGBRegressor(**params)
+
+        self.model.fit(X, y)
+        self.logger.info("Final model trained on combined train+val data")
+
+    def run(self) -> pd.DataFrame:
+        """
+        Execute the full feature selection pipeline.
+
+        Returns:
+            DataFrame with columns: feature_name, shap_importance,
+            permutation_importance, is_harmful, harm_reason.
+            Sorted by shap_importance descending.
+        """
+        self.load_data()
+
+        best_params = self.tune_hyperparams()
+        self.train_model(best_params)
+
+        metric_fn = get_metric_fn(self.config.task)
+
+        shap_importance = compute_shap_importance(
+            model=self.model,
+            data=self.val_data,
+            feature_names=self.feature_names,
+        )
+
+        perm_importance = compute_permutation_importance(
+            model=self.model,
+            data=self.val_data,
+            target_column=self.config.target_column,
+            feature_names=self.feature_names,
+            metric_fn=metric_fn,
+        )
+
+        detector = HarmDetector(
+            shap_importance_threshold=self.config.shap_importance_threshold,
+            perm_importance_threshold=self.config.permutation_importance_threshold,
+        )
+        is_harmful, harm_reasons = detector.flag_harmful_features(
+            shap_importance=shap_importance,
+            perm_importance=perm_importance,
+        )
+
+        self.results = (
+            pd.DataFrame(
+                {
+                    "feature_name": self.feature_names,
+                    "shap_importance": shap_importance,
+                    "permutation_importance": perm_importance,
+                    "is_harmful": is_harmful,
+                    "harm_reason": harm_reasons,
+                }
+            )
+            .sort_values("shap_importance", ascending=False)
+            .reset_index(drop=True)
+        )
+
+        save_results(
+            results=self.results,
+            output_file=self.config.output_file,
+            output_format=self.config.output_format,
+        )
+
+        n_harmful = self.results["is_harmful"].sum()
+        self.logger.info(
+            f"Done. {len(self.results)} features evaluated,"
+            f" {n_harmful} flagged as harmful."
+        )
+        return self.results
