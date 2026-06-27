@@ -22,6 +22,7 @@ from .residual_diagnostics import (
     compute_residuals,
     flag_residual_correlated_features,
 )
+from .synthetic_features import SyntheticFeatureSuggestion, suggest_synthetic_features
 from .utils import check_class_imbalance, get_metric_fn, load_csv, save_results
 
 
@@ -141,6 +142,7 @@ class FeatureSelectionPipeline:
         self.results: pd.DataFrame | None = None
         self.group_summary: pd.DataFrame | None = None
         self.interactions: pd.DataFrame | None = None
+        self.suggested_features: list[SyntheticFeatureSuggestion] | None = None
 
     def load_data(self) -> None:
         """
@@ -409,6 +411,19 @@ class FeatureSelectionPipeline:
             "Caution" and a plain-English note is appended to its reason;
             otherwise the note is appended informationally without changing
             the recommendation tier.
+
+            If config.compute_shap_interactions is True and
+            config.synthetic_config.synthesize_from_interactions is True,
+            candidate pairwise-product features are derived from the
+            strongest SHAP interactions and scored by mutual information
+            against the target (see synthetic_features.py). Candidates
+            exceeding config.synthetic_config.mi_threshold are saved to
+            `<output_stem>_suggested_features.csv` and made available on
+            self.suggested_features. This is advisory only -- suggestions
+            are never added to the model or training data. If
+            synthesize_from_interactions is True but
+            compute_shap_interactions is False, a warning is logged and
+            this step is skipped (self.suggested_features stays None).
         """
         self.load_data()
         if self.train_data is None or self.val_data is None or self.test_data is None:
@@ -623,6 +638,32 @@ class FeatureSelectionPipeline:
             interactions_file = f"{stem}_interactions.csv"
             self.interactions.to_csv(interactions_file, index=False)
             self.logger.info(f"SHAP interaction values saved to {interactions_file}")
+
+            if self.config.synthetic_config.synthesize_from_interactions:
+                self.suggested_features = suggest_synthetic_features(
+                    data=self.test_data,
+                    target_column=self.config.target_column,
+                    interactions=self.interactions,
+                    task=self.config.task,
+                    random_seed=self.config.random_seed,
+                    config=self.config.synthetic_config,
+                )
+                stem, _ = os.path.splitext(self.config.output_file)
+                suggestions_file = f"{stem}_suggested_features.csv"
+                pd.DataFrame([vars(s) for s in self.suggested_features]).to_csv(
+                    suggestions_file, index=False
+                )
+                self.logger.info(
+                    f"{len(self.suggested_features)} synthetic feature"
+                    f" suggestions saved to {suggestions_file}"
+                )
+        elif self.config.synthetic_config.synthesize_from_interactions:
+            self.logger.warning(
+                "synthetic_config.synthesize_from_interactions is True but"
+                " compute_shap_interactions is False; skipping synthetic"
+                " feature suggestion. Set compute_shap_interactions=True to"
+                " enable it."
+            )
 
         n_drop = (self.results["recommendation"] == "Drop").sum()
         n_caution = (self.results["recommendation"] == "Caution").sum()

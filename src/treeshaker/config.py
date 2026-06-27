@@ -5,6 +5,7 @@ from dataclasses import asdict, dataclass, field
 from .exceptions import ConfigError
 from .leakage_detection import LeakageConfig
 from .residual_diagnostics import ResidualConfig
+from .synthetic_features import SyntheticConfig
 from .utils import VALID_PERMUTATION_METRICS
 
 
@@ -112,6 +113,11 @@ class Config:
     set; only the row count used to estimate it is reduced. None
     (default) uses all rows, matching prior behavior -- no change unless
     explicitly set."""
+    synthetic_config: SyntheticConfig = field(default_factory=SyntheticConfig)
+    """Configuration for SHAP-interaction-driven synthetic feature
+    suggestion (see synthetic_features.py). Off by default
+    (synthetic_config.synthesize_from_interactions=False); when enabled,
+    also requires compute_shap_interactions=True."""
 
     def __post_init__(self) -> None:
         """Validate configuration values."""
@@ -154,6 +160,16 @@ class Config:
         if self.shap_sample_size is not None and self.shap_sample_size < 1:
             raise ConfigError(
                 f"shap_sample_size must be >= 1, got {self.shap_sample_size}"
+            )
+        if self.synthetic_config.mi_threshold < 0:
+            raise ConfigError(
+                "synthetic_config.mi_threshold must be >= 0, got"
+                f" {self.synthetic_config.mi_threshold}"
+            )
+        if self.synthetic_config.interaction_top_n < 1:
+            raise ConfigError(
+                "synthetic_config.interaction_top_n must be >= 1, got"
+                f" {self.synthetic_config.interaction_top_n}"
             )
         if (
             self.permutation_metric is not None
