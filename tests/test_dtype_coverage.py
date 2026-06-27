@@ -27,6 +27,7 @@ just work" numeric baseline end-to-end.
 import numpy as np
 import pandas as pd
 import pytest
+from conftest import make_config
 
 from treeshaker.config import Config
 from treeshaker.dtype_handling import (
@@ -43,13 +44,7 @@ from treeshaker.pipeline import FeatureSelectionPipeline
 
 def _fast_config(input_file: str, task: str, tmp_path) -> Config:
     """A Config with tuning skipped, for fast deterministic test runs."""
-    return Config(
-        input_file=input_file,
-        target_column="target",
-        task=task,
-        output_file=str(tmp_path / "results.csv"),
-        skip_tuning=True,
-    )
+    return make_config(input_file, task, tmp_path, skip_tuning=True)
 
 
 # ---------------------------------------------------------------------------
