@@ -3,11 +3,16 @@
 import logging
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, mean_squared_error, roc_auc_score
 from sklearn.model_selection import train_test_split
 
 from .exceptions import ValidationError
+
+#: Named metric overrides supported by `--permutation-metric` /
+#: Config.permutation_metric.
+VALID_PERMUTATION_METRICS = {"roc_auc", "accuracy", "neg_mse", "wape"}
 
 
 def validate_target(df: pd.DataFrame, target_column: str, task: str) -> None:
@@ -196,7 +201,43 @@ def load_csv(
     )
 
 
-def get_metric_fn(task: str):
+def compute_wape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """Compute Weighted Absolute Percentage Error (WAPE).
+
+    WAPE = sum(abs(y_true - y_pred)) / sum(abs(y_true))
+
+    This is the standard business metric for volume/demand forecasting,
+    as opposed to MSE which penalizes large errors quadratically and is
+    less directly interpretable in business terms ("we were off by X% of
+    total volume").
+
+    Args:
+        y_true: Ground-truth values.
+        y_pred: Predicted values.
+
+    Returns:
+        WAPE as a float. 0 means a perfect forecast; values are
+        non-negative and unbounded above. Lower is better (unlike most
+        metrics in this module, WAPE is NOT "higher is better" --
+        get_metric_fn negates it for that reason).
+
+    Raises:
+        ValidationError: If sum(abs(y_true)) is 0, since WAPE is undefined
+            (division by zero) when total actual volume is zero.
+    """
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+    total_actual = np.abs(y_true).sum()
+    if total_actual == 0:
+        raise ValidationError(
+            "WAPE is undefined when sum(abs(y_true)) == 0 (no actual volume"
+            " to compare against). Use a different permutation metric for"
+            " this target."
+        )
+    return float(np.abs(y_true - y_pred).sum() / total_actual)
+
+
+def get_metric_fn(task: str, override: str | None = None):
     """Return the evaluation metric function for the given task.
 
     The returned function has the signature (y_true, y_pred) -> float,
@@ -204,13 +245,33 @@ def get_metric_fn(task: str):
 
     Args:
         task: One of "binary", "multiclass", or "regression".
+        override: Optional explicit metric name to use instead of the
+            automatic per-task default. One of "roc_auc", "accuracy",
+            "neg_mse", or "wape". If None (the default), the automatic
+            per-task behavior is preserved exactly as before: ROC-AUC for
+            binary, accuracy for multiclass, negative MSE for regression.
 
     Returns:
         A callable metric function.
 
     Raises:
-        ValueError: If the task is not recognized.
+        ValueError: If the task is not recognized, or override is not a
+            recognized metric name.
     """
+    if override is not None:
+        if override == "roc_auc":
+            return lambda y_true, y_pred: roc_auc_score(y_true, y_pred)
+        if override == "accuracy":
+            return lambda y_true, y_pred: accuracy_score(y_true, y_pred)
+        if override == "neg_mse":
+            return lambda y_true, y_pred: -mean_squared_error(y_true, y_pred)
+        if override == "wape":
+            return lambda y_true, y_pred: -compute_wape(y_true, y_pred)
+        raise ValueError(
+            f"Unknown permutation metric override: {override!r}. Valid"
+            f" options are: {sorted(VALID_PERMUTATION_METRICS)}"
+        )
+
     if task == "binary":
         return lambda y_true, y_pred: roc_auc_score(y_true, y_pred)
     if task == "multiclass":

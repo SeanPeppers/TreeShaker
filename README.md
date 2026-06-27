@@ -146,7 +146,8 @@ Results are sorted by SHAP importance (descending).
 |---|---|---|
 | `feature_name` | str | Feature column name |
 | `shap_importance` | float | Mean absolute SHAP value across held-out test samples |
-| `permutation_importance` | float | Performance drop when the feature is shuffled |
+| `permutation_importance` | float | Mean performance drop across `--n-permutations` independent shuffles of the feature |
+| `permutation_importance_std` | float | Std dev of the performance drop across those shuffles — higher means a noisier, less stable estimate for that feature |
 | `mutual_info_score` | float | Model-agnostic mutual information between the feature and the target (cross-check on SHAP/permutation) |
 | `recommendation` | str | `Drop`, `Caution`, or `Keep` |
 | `reason` | str | Plain-English explanation. Empty if `Keep` |
@@ -188,6 +189,8 @@ customer_id   0.0512           0.041                   0.061               Cauti
 | `--optuna-timeout` | No | `300` | Optuna timeout in seconds |
 | `--shap-threshold` | No | `0.01` | Flag features with mean \|SHAP\| below this |
 | `--perm-threshold` | No | `0.05` | Flag features with permutation importance below this |
+| `--n-permutations` | No | `5` | Number of independent shuffles per feature for permutation importance, averaged to reduce single-shuffle noise (matches sklearn's own `permutation_importance` default) |
+| `--permutation-metric` | No | unset (auto) | Override the metric used for permutation importance only (does not affect Optuna tuning). One of `roc_auc`, `accuracy`, `neg_mse`, `wape`. Unset uses the automatic per-task default (`roc_auc` for binary, `accuracy` for multiclass, `neg_mse` for regression) |
 | `--target-corr-threshold` | No | `0.95` | Flag features whose correlation with the target exceeds this |
 | `--dominant-shap-fraction` | No | `0.7` | Flag a feature if it accounts for more than this fraction of total SHAP importance |
 | `--skip-leakage-check` | No | `False` | Disable all leakage/logical-error checks |
@@ -282,6 +285,24 @@ pipeline = FeatureSelectionPipeline(config)
 results = pipeline.run()
 print(pipeline.interactions)
 ```
+
+## Permutation importance repeats and metric override
+
+Permutation importance works by shuffling one feature's values at a time and measuring how much the model's score drops. A single shuffle is noisy: an unlucky (or lucky) random permutation can make a feature look more or less important than it really is, especially on smaller datasets. To reduce this noise, TreeShaker shuffles each feature `--n-permutations` times (default `5`, matching scikit-learn's own `permutation_importance` default) and reports the **mean** score drop as `permutation_importance`, plus the **standard deviation** across those shuffles as `permutation_importance_std` — a stability signal you can use the same way as `shap_importance_std` from bootstrap importance.
+
+```bash
+treeshaker --input data.csv --target churn --task binary --n-permutations 10
+```
+
+> **Note:** because the default changed from a single shuffle to an average of 5, numeric `permutation_importance` values will differ slightly from earlier TreeShaker versions — generally less noisy and more stable, but a real behavior change worth knowing about if you're comparing results across versions.
+
+By default, the metric used to score permutation importance is chosen automatically per task: ROC-AUC for binary, accuracy for multiclass, negative MSE for regression. You can override this — for permutation importance only, not for Optuna tuning — with `--permutation-metric`:
+
+```bash
+treeshaker --input data.csv --target volume --task regression --permutation-metric wape
+```
+
+Supported values: `roc_auc`, `accuracy`, `neg_mse`, `wape`. `wape` (Weighted Absolute Percentage Error: `sum(abs(y_true - y_pred)) / sum(abs(y_true))`) is the standard business metric for volume/demand forecasting use cases, where a relative-error read in percent-of-total-volume terms is more interpretable than MSE's squared-error units. Passing an unsupported value is rejected up front with a clear error listing the valid options.
 
 ## Bootstrap importance stability (opt-in)
 

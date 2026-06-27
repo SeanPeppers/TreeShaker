@@ -3,6 +3,7 @@
 from unittest.mock import patch
 
 import pandas as pd
+import pytest
 
 from treeshaker.cli import main, parse_arguments
 
@@ -49,6 +50,8 @@ def test_parse_arguments_defaults():
     assert args.val_size == 0.2
     assert args.random_seed == 42
     assert not args.verbose
+    assert args.n_permutations == 5
+    assert args.permutation_metric is None
 
 
 def test_main_invalid_json_xgboost_params(tmp_path):
@@ -96,3 +99,74 @@ def test_main_end_to_end(binary_csv, tmp_path):
     assert "feature_name" in df.columns
     assert "recommendation" in df.columns
     assert len(df) == 10
+
+
+def test_parse_arguments_n_permutations_and_permutation_metric():
+    with patch(
+        "sys.argv",
+        [
+            "treeshaker",
+            "--input",
+            "f.csv",
+            "--target",
+            "y",
+            "--task",
+            "regression",
+            "--n-permutations",
+            "3",
+            "--permutation-metric",
+            "wape",
+        ],
+    ):
+        args = parse_arguments()
+    assert args.n_permutations == 3
+    assert args.permutation_metric == "wape"
+
+
+def test_parse_arguments_invalid_permutation_metric_rejected():
+    with patch(
+        "sys.argv",
+        [
+            "treeshaker",
+            "--input",
+            "f.csv",
+            "--target",
+            "y",
+            "--task",
+            "regression",
+            "--permutation-metric",
+            "bogus",
+        ],
+    ):
+        with pytest.raises(SystemExit):
+            parse_arguments()
+
+
+def test_main_end_to_end_with_n_permutations_and_metric(binary_csv, tmp_path):
+    output = str(tmp_path / "results.csv")
+    with patch(
+        "sys.argv",
+        [
+            "treeshaker",
+            "--input",
+            binary_csv,
+            "--target",
+            "target",
+            "--task",
+            "binary",
+            "--output",
+            output,
+            "--optuna-trials",
+            "3",
+            "--optuna-timeout",
+            "30",
+            "--n-permutations",
+            "2",
+            "--permutation-metric",
+            "roc_auc",
+        ],
+    ):
+        result = main()
+    assert result == 0
+    df = pd.read_csv(output)
+    assert "permutation_importance_std" in df.columns
