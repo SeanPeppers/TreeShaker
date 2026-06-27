@@ -34,8 +34,8 @@ Automated feature selection using XGBoost, SHAP, and Optuna. Give it a CSV and a
 
 ## How it works
 
-1. **Tune** — Optuna searches for the best XGBoost hyperparameters on a train/validation split
-2. **Train** — a final XGBoost model is fit on the tuned parameters
+1. **Tune** — Optuna searches for the best XGBoost hyperparameters on a train/validation split. This step is optional: pass `--skip-tuning` to skip it entirely and train directly with the default or manually-specified (`--xgboost-params`) XGBoost parameters, which is useful for quick runs
+2. **Train** — a final XGBoost model is fit on the tuned (or directly configured) parameters
 3. **Rank** — SHAP values and permutation importance are computed for every feature
 4. **Flag** — features are marked harmful if their SHAP importance is near zero *or* if shuffling them doesn't degrade the model (i.e., they carry no signal)
 5. **Output** — results saved as a ranked CSV or HTML report
@@ -187,6 +187,7 @@ customer_id   0.0512           0.041                   0.061               Cauti
 | `--target-corr-threshold` | No | `0.95` | Flag features whose correlation with the target exceeds this |
 | `--dominant-shap-fraction` | No | `0.7` | Flag a feature if it accounts for more than this fraction of total SHAP importance |
 | `--skip-leakage-check` | No | `False` | Disable all leakage/logical-error checks |
+| `--skip-tuning` | No | `False` | Skip Optuna hyperparameter tuning and train the final model directly using the configured (default or `--xgboost-params`) XGBoost parameters |
 | `--shap-interactions` | No | `False` | Compute pairwise SHAP interaction values (opt-in, expensive) and save them to `<output_stem>_interactions.csv` |
 | `--imbalance-threshold` | No | `0.1` | Warn if the minority class fraction (binary/multiclass) falls below this |
 | `--n-bootstrap` | No | `0` | Number of bootstrap resamples to refit and assess SHAP importance ranking stability. `0` disables this feature |

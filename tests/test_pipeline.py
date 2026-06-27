@@ -1,5 +1,7 @@
 """End-to-end pipeline tests."""
 
+from unittest.mock import patch
+
 import pandas as pd
 import pytest
 
@@ -264,3 +266,57 @@ def test_pipeline_bootstrap_regression(regression_csv, tmp_path):
     assert "shap_importance_mean" in results.columns
     assert "shap_importance_std" in results.columns
     assert len(results) == 20
+
+
+def test_skip_tuning_off_by_default(binary_csv, tmp_path):
+    """skip_tuning defaults to False, matching existing behavior."""
+    config = make_fast_config(binary_csv, "binary", tmp_path)
+    assert config.skip_tuning is False
+
+
+def test_pipeline_skip_tuning_runs_without_optuna(binary_csv, tmp_path):
+    """With skip_tuning=True, the pipeline completes and never calls Optuna."""
+    config = Config(
+        input_file=binary_csv,
+        target_column="target",
+        task="binary",
+        output_file=str(tmp_path / "results.csv"),
+        output_format="csv",
+        xgboost_config=XGBoostConfig(max_depth=2, extra_params={"n_estimators": 5}),
+        skip_tuning=True,
+    )
+    pipeline = FeatureSelectionPipeline(config)
+
+    with patch("optuna.create_study") as mock_create_study:
+        results = pipeline.run()
+
+    mock_create_study.assert_not_called()
+    assert isinstance(results, pd.DataFrame)
+    assert set(results.columns) == {
+        "feature_name",
+        "shap_importance",
+        "permutation_importance",
+        "mutual_info_score",
+        "recommendation",
+        "reason",
+    }
+    assert len(results) == 10
+
+
+def test_pipeline_skip_tuning_uses_configured_xgboost_params(binary_csv, tmp_path):
+    """skip_tuning trains directly from XGBoostConfig, not Optuna's best_params."""
+    xgb_cfg = XGBoostConfig(max_depth=3, extra_params={"n_estimators": 5})
+    config = Config(
+        input_file=binary_csv,
+        target_column="target",
+        task="binary",
+        output_file=str(tmp_path / "results.csv"),
+        output_format="csv",
+        xgboost_config=xgb_cfg,
+        skip_tuning=True,
+    )
+    pipeline = FeatureSelectionPipeline(config)
+    pipeline.run()
+
+    assert pipeline.model.get_params()["max_depth"] == 3
+    assert pipeline.model.get_params()["n_estimators"] == 5

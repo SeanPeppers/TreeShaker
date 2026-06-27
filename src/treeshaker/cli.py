@@ -106,6 +106,13 @@ def parse_arguments() -> argparse.Namespace:
         help="Disable leakage and logical error detection.",
     )
     parser.add_argument(
+        "--skip-tuning",
+        action="store_true",
+        help="Skip Optuna hyperparameter tuning and train the final model"
+        " directly using the configured (default or --xgboost-params)"
+        " XGBoost parameters.",
+    )
+    parser.add_argument(
         "--n-bootstrap",
         type=int,
         default=0,
@@ -209,6 +216,7 @@ def main() -> int:
             compute_shap_interactions=args.shap_interactions,
             imbalance_warning_threshold=args.imbalance_threshold,
             verbose=args.verbose,
+            skip_tuning=args.skip_tuning,
         )
     except ConfigError as exc:
         logger.error(f"Configuration error: {exc}")

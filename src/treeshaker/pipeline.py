@@ -98,7 +98,9 @@ class FeatureSelectionPipeline:
 
     The pipeline runs in the following order:
     1. Load CSV data and split into train/validation sets.
-    2. Tune XGBoost hyperparameters with Optuna.
+    2. Tune XGBoost hyperparameters with Optuna (skipped when
+       config.skip_tuning is True, in which case the configured
+       XGBoostConfig values are used directly).
     3. Train the final XGBoost model on tuned hyperparameters.
     4. Compute SHAP importance for each feature.
     5. Compute permutation importance for each feature.
@@ -385,7 +387,14 @@ class FeatureSelectionPipeline:
         if self.train_data is None or self.val_data is None:
             raise RuntimeError("load_data() did not populate train/val data")
 
-        best_params = self.tune_hyperparams()
+        if self.config.skip_tuning:
+            self.logger.info(
+                "Skipping Optuna tuning (skip_tuning=True); using configured"
+                " XGBoost parameters directly."
+            )
+            best_params = self.config.xgboost_config.to_dict()
+        else:
+            best_params = self.tune_hyperparams()
         self.train_model(best_params)
 
         metric_fn = get_metric_fn(self.config.task)

@@ -66,6 +66,7 @@ class Config:
     bootstrap_config: BootstrapConfig = field(default_factory=BootstrapConfig)
     imbalance_warning_threshold: float = 0.1
     verbose: bool = False
+    skip_tuning: bool = False
 
     def __post_init__(self) -> None:
         """Validate configuration values."""
