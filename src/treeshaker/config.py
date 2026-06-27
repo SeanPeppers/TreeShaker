@@ -37,6 +37,14 @@ class XGBoostConfig:
 
 
 @dataclass
+class BootstrapConfig:
+    """Configuration for bootstrap ensemble importance stability analysis."""
+
+    n_bootstrap: int = 0
+    sample_frac: float = 1.0
+
+
+@dataclass
 class Config:
     """Top-level pipeline configuration."""
 
@@ -53,6 +61,7 @@ class Config:
     permutation_importance_threshold: float = 0.05
     compute_shap_interactions: bool = False
     leakage_config: LeakageConfig = field(default_factory=LeakageConfig)
+    bootstrap_config: BootstrapConfig = field(default_factory=BootstrapConfig)
     imbalance_warning_threshold: float = 0.1
     verbose: bool = False
 
@@ -68,4 +77,14 @@ class Config:
             raise ConfigError(
                 f"output_format must be one of {valid_formats}, "
                 f"got {self.output_format!r}"
+            )
+        if self.bootstrap_config.n_bootstrap < 0:
+            raise ConfigError(
+                "bootstrap_config.n_bootstrap must be >= 0, got"
+                f" {self.bootstrap_config.n_bootstrap}"
+            )
+        if not 0 < self.bootstrap_config.sample_frac <= 1.0:
+            raise ConfigError(
+                "bootstrap_config.sample_frac must be in (0, 1], got"
+                f" {self.bootstrap_config.sample_frac}"
             )

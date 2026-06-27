@@ -4,7 +4,7 @@ import argparse
 import json
 import logging
 
-from .config import Config, OptunaConfig, XGBoostConfig
+from .config import BootstrapConfig, Config, OptunaConfig, XGBoostConfig
 from .exceptions import ConfigError, TreeShakerError
 from .leakage_detection import LeakageConfig
 from .pipeline import FeatureSelectionPipeline
@@ -92,6 +92,21 @@ def parse_arguments() -> argparse.Namespace:
         help="Disable leakage and logical error detection.",
     )
     parser.add_argument(
+        "--n-bootstrap",
+        type=int,
+        default=0,
+        help="Number of bootstrap resamples to refit and assess SHAP"
+        " importance ranking stability. 0 disables bootstrap importance."
+        " (default: 0)",
+    )
+    parser.add_argument(
+        "--bootstrap-sample-frac",
+        type=float,
+        default=1.0,
+        help="Fraction of combined train+val rows to sample (with"
+        " replacement) per bootstrap iteration. (default: 1.0)",
+    )
+    parser.add_argument(
         "--shap-interactions",
         action="store_true",
         help="Compute pairwise SHAP interaction values (expensive, opt-in)."
@@ -165,6 +180,10 @@ def main() -> int:
             shap_importance_threshold=args.shap_threshold,
             permutation_importance_threshold=args.perm_threshold,
             leakage_config=leakage_config,
+            bootstrap_config=BootstrapConfig(
+                n_bootstrap=args.n_bootstrap,
+                sample_frac=args.bootstrap_sample_frac,
+            ),
             compute_shap_interactions=args.shap_interactions,
             imbalance_warning_threshold=args.imbalance_threshold,
             verbose=args.verbose,

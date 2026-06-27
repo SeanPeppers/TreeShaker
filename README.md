@@ -28,6 +28,7 @@ Automated feature selection using XGBoost, SHAP, and Optuna. Give it a CSV and a
 - [Leakage detection](#leakage-detection)
 - [SHAP interaction values](#shap-interaction-values)
 - [Class imbalance warning](#class-imbalance-warning)
+- [Bootstrap importance stability (opt-in)](#bootstrap-importance-stability-opt-in)
 - [Development](#development)
 
 ## How it works
@@ -144,6 +145,8 @@ Results are sorted by SHAP importance (descending).
 | `mutual_info_score` | float | Model-agnostic mutual information between the feature and the target (cross-check on SHAP/permutation) |
 | `recommendation` | str | `Drop`, `Caution`, or `Keep` |
 | `reason` | str | Plain-English explanation. Empty if `Keep` |
+| `shap_importance_mean` *(optional)* | float | Mean SHAP importance across bootstrap refits. Only present when `--n-bootstrap` > 0 |
+| `shap_importance_std` *(optional)* | float | Std dev of SHAP importance across bootstrap refits — higher means a less stable ranking. Only present when `--n-bootstrap` > 0 |
 
 Example output:
 
@@ -183,6 +186,8 @@ customer_id   0.0512           0.041                   0.061               Cauti
 | `--skip-leakage-check` | No | `False` | Disable all leakage/logical-error checks |
 | `--shap-interactions` | No | `False` | Compute pairwise SHAP interaction values (opt-in, expensive) and save them to `<output_stem>_interactions.csv` |
 | `--imbalance-threshold` | No | `0.1` | Warn if the minority class fraction (binary/multiclass) falls below this |
+| `--n-bootstrap` | No | `0` | Number of bootstrap resamples to refit and assess SHAP importance ranking stability. `0` disables this feature |
+| `--bootstrap-sample-frac` | No | `1.0` | Fraction of combined train+val rows sampled (with replacement) per bootstrap iteration |
 | `--test-size` | No | `0.2` | Fraction of data used for validation |
 | `--random-seed` | No | `42` | Random seed for reproducibility |
 | `--verbose` | No | `False` | Enable debug logging |
@@ -257,6 +262,20 @@ pipeline = FeatureSelectionPipeline(config)
 results = pipeline.run()
 print(pipeline.interactions)
 ```
+
+## Bootstrap importance stability (opt-in)
+
+TreeShaker normally fits a single final XGBoost model and reports its SHAP and permutation importance. A single fit's importance ranking can be noisy, especially on smaller datasets — a feature ranked 3rd might just as easily rank 6th on a slightly different sample.
+
+Set `--n-bootstrap` to a positive integer to additionally refit the model `n` times on bootstrap resamples (sampled with replacement from the combined train+validation data) using the **same** tuned hyperparameters Optuna already found — Optuna is not re-run per iteration, since that would be far too expensive for what this feature is checking. Each bootstrap refit recomputes SHAP importance only; permutation importance is skipped per iteration since it requires a full extra prediction pass per feature, which would make the cost scale with both `n_bootstrap` and feature count. SHAP alone is enough to assess ranking stability.
+
+```bash
+treeshaker --input data.csv --target churn --task binary --n-bootstrap 30
+```
+
+This adds two columns to the output: `shap_importance_mean` and `shap_importance_std`, the mean and standard deviation of each feature's SHAP importance across the `n_bootstrap` refits. A high `shap_importance_std` relative to `shap_importance_mean` signals a feature whose importance ranking isn't stable and shouldn't be trusted from the single main fit alone.
+
+By default `n_bootstrap` is `0`, so this is fully opt-in and the output schema is unchanged unless you ask for it.
 
 ## Development
 

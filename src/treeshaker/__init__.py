@@ -1,6 +1,6 @@
 """TreeShaker: Automated feature selection using XGBoost, SHAP, and Optuna."""
 
-from .config import Config, OptunaConfig, XGBoostConfig
+from .config import BootstrapConfig, Config, OptunaConfig, XGBoostConfig
 from .exceptions import ConfigError, TreeShakerError, ValidationError
 from .leakage_detection import LeakageConfig, LeakageDetector
 from .pipeline import FeatureSelectionPipeline
@@ -12,6 +12,7 @@ __all__ = [
     "Config",
     "OptunaConfig",
     "XGBoostConfig",
+    "BootstrapConfig",
     "LeakageConfig",
     "LeakageDetector",
     "TreeShakerError",

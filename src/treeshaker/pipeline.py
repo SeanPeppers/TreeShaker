@@ -4,6 +4,7 @@ import logging
 import os
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from .config import Config
@@ -31,8 +32,10 @@ class FeatureSelectionPipeline:
     6. Compute mutual information between each feature and the target.
     7. Flag harmful features using both importance signals.
     8. Detect data leakage warnings.
-    9. Save results to CSV or HTML.
-    10. (Optional, opt-in) Compute pairwise SHAP interaction values and save
+    9. (Optional) Refit on bootstrap resamples to assess importance
+       ranking stability, when config.bootstrap_config.n_bootstrap > 0.
+    10. Save results to CSV or HTML.
+    11. (Optional, opt-in) Compute pairwise SHAP interaction values and save
         them to a separate `<output_stem>_interactions.csv` file.
 
     Args:
@@ -198,6 +201,84 @@ class FeatureSelectionPipeline:
         self.model.fit(X, y)
         self.logger.info("Final model trained on combined train+val data")
 
+    def _run_bootstrap_importance(self, best_params: dict) -> np.ndarray:
+        """
+        Refit models on bootstrap resamples and collect SHAP importance.
+
+        Uses the same best_params already found by Optuna for every
+        iteration (re-running Optuna per bootstrap sample would be far too
+        slow and isn't the point of this feature). Only SHAP importance is
+        recomputed per iteration; permutation importance is skipped here
+        because it requires an extra full prediction pass per feature per
+        iteration, which would multiply the cost of this already n_bootstrap-
+        times-more-expensive step. SHAP alone is sufficient to assess
+        ranking stability.
+
+        Args:
+            best_params: Hyperparameter dict returned by tune_hyperparams().
+
+        Returns:
+            Array of shape (n_bootstrap, n_features) with SHAP importance
+            from each bootstrap iteration.
+        """
+        import xgboost as xgb
+
+        from .importance import compute_shap_importance
+
+        if self.train_data is None or self.val_data is None:
+            raise RuntimeError(
+                "load_data() must be called before _run_bootstrap_importance()"
+            )
+
+        bootstrap_cfg = self.config.bootstrap_config
+        combined = pd.concat([self.train_data, self.val_data], ignore_index=True)
+        n_rows = len(combined)
+        sample_size = max(1, int(round(n_rows * bootstrap_cfg.sample_frac)))
+
+        params = {
+            **best_params,
+            "random_state": self.config.random_seed,
+            "verbosity": 0,
+        }
+        params.update(self.config.xgboost_config.extra_params)
+
+        results = np.zeros((bootstrap_cfg.n_bootstrap, len(self.feature_names)))
+        for i in range(bootstrap_cfg.n_bootstrap):
+            seed = self.config.random_seed + i
+            rng = np.random.default_rng(seed=seed)
+            sample_idx = rng.integers(0, n_rows, size=sample_size)
+            resampled = combined.iloc[sample_idx].reset_index(drop=True)
+
+            X_resampled = resampled[self.feature_names]
+            y_resampled = resampled[self.config.target_column]
+
+            iter_params = {**params, "random_state": seed}
+            if self.config.task in ("binary", "multiclass"):
+                objective_str = (
+                    "binary:logistic"
+                    if self.config.task == "binary"
+                    else "multi:softprob"
+                )
+                bootstrap_model = xgb.XGBClassifier(
+                    objective=objective_str, **iter_params
+                )
+            else:
+                bootstrap_model = xgb.XGBRegressor(**iter_params)
+
+            bootstrap_model.fit(X_resampled, y_resampled)
+
+            results[i] = compute_shap_importance(
+                model=bootstrap_model,
+                data=self.val_data,
+                feature_names=self.feature_names,
+            )
+            self.logger.info(
+                f"Bootstrap importance iteration {i + 1}/{bootstrap_cfg.n_bootstrap}"
+                " complete"
+            )
+
+        return results
+
     def run(self) -> pd.DataFrame:
         """
         Execute the full feature selection pipeline.
@@ -208,6 +289,10 @@ class FeatureSelectionPipeline:
             recommendation is "Drop", "Caution", or "Keep".
             reason is a plain English explanation (empty string if "Keep").
             Sorted by shap_importance descending.
+            If config.bootstrap_config.n_bootstrap > 0, two additional
+            columns are included: shap_importance_mean and
+            shap_importance_std, summarizing SHAP importance across
+            bootstrap-resampled refits for ranking stability assessment.
 
             If config.compute_shap_interactions is True, pairwise SHAP
             interaction values are also computed and saved to
@@ -284,17 +369,22 @@ class FeatureSelectionPipeline:
                 recommendations.append("Keep")
                 reasons.append("")
 
+        result_columns: dict[str, Any] = {
+            "feature_name": self.feature_names,
+            "shap_importance": shap_importance,
+            "permutation_importance": perm_importance,
+            "mutual_info_score": mi_score,
+            "recommendation": recommendations,
+            "reason": reasons,
+        }
+
+        if self.config.bootstrap_config.n_bootstrap > 0:
+            bootstrap_importances = self._run_bootstrap_importance(best_params)
+            result_columns["shap_importance_mean"] = bootstrap_importances.mean(axis=0)
+            result_columns["shap_importance_std"] = bootstrap_importances.std(axis=0)
+
         self.results = (
-            pd.DataFrame(
-                {
-                    "feature_name": self.feature_names,
-                    "shap_importance": shap_importance,
-                    "permutation_importance": perm_importance,
-                    "mutual_info_score": mi_score,
-                    "recommendation": recommendations,
-                    "reason": reasons,
-                }
-            )
+            pd.DataFrame(result_columns)
             .sort_values("shap_importance", ascending=False)
             .reset_index(drop=True)
         )
