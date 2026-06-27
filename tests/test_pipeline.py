@@ -27,8 +27,8 @@ def test_pipeline_binary_run(binary_csv, tmp_path):
         "feature_name",
         "shap_importance",
         "permutation_importance",
-        "is_harmful",
-        "harm_reason",
+        "recommendation",
+        "reason",
     }
     assert len(results) == 10
 
@@ -39,6 +39,13 @@ def test_pipeline_regression_run(regression_csv, tmp_path):
     results = pipeline.run()
     assert len(results) == 20
     assert results["shap_importance"].is_monotonic_decreasing
+
+
+def test_pipeline_recommendation_values(binary_csv, tmp_path):
+    config = make_fast_config(binary_csv, "binary", tmp_path)
+    results = FeatureSelectionPipeline(config).run()
+    valid = {"Drop", "Caution", "Keep"}
+    assert results["recommendation"].isin(valid).all()
 
 
 def test_pipeline_saves_csv(binary_csv, tmp_path):
@@ -54,6 +61,7 @@ def test_pipeline_saves_csv(binary_csv, tmp_path):
     assert output.exists()
     df = pd.read_csv(output)
     assert "feature_name" in df.columns
+    assert "recommendation" in df.columns
 
 
 def test_pipeline_saves_html(binary_csv, tmp_path):
@@ -77,3 +85,10 @@ def test_pipeline_multiclass_run(multiclass_csv, tmp_path):
     pipeline = FeatureSelectionPipeline(config)
     results = pipeline.run()
     assert len(results) == 15
+
+
+def test_keep_reason_is_empty(binary_csv, tmp_path):
+    config = make_fast_config(binary_csv, "binary", tmp_path)
+    results = FeatureSelectionPipeline(config).run()
+    keep_rows = results[results["recommendation"] == "Keep"]
+    assert (keep_rows["reason"] == "").all()

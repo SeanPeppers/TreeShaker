@@ -24,7 +24,7 @@ def test_low_shap_flagged(detector):
     perm = np.array([0.4, 0.2, 0.1])
     is_harmful, reasons = detector.flag_harmful_features(shap, perm)
     assert is_harmful[1]
-    assert "SHAP" in reasons[1]
+    assert "almost no weight" in reasons[1]
     assert not is_harmful[0]
     assert not is_harmful[2]
 
@@ -34,7 +34,7 @@ def test_low_perm_flagged(detector):
     perm = np.array([0.4, 0.01, 0.1])
     is_harmful, reasons = detector.flag_harmful_features(shap, perm)
     assert is_harmful[1]
-    assert "permutation" in reasons[1]
+    assert "Shuffling" in reasons[1]
 
 
 def test_both_signals_flagged(detector):
@@ -42,8 +42,7 @@ def test_both_signals_flagged(detector):
     perm = np.array([0.4, 0.001])
     is_harmful, reasons = detector.flag_harmful_features(shap, perm)
     assert is_harmful[1]
-    assert "SHAP" in reasons[1]
-    assert "permutation" in reasons[1]
+    assert "ignores" in reasons[1]
 
 
 def test_custom_thresholds():
@@ -54,7 +53,7 @@ def test_custom_thresholds():
     perm = np.array([0.3])
     is_harmful, reasons = detector.flag_harmful_features(shap, perm)
     assert is_harmful[0]
-    assert "SHAP" in reasons[0]
+    assert "almost no weight" in reasons[0]
 
 
 def test_output_lengths_match():

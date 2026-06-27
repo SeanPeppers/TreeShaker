@@ -38,8 +38,10 @@ class HarmDetector:
         Determine which features are harmful based on importance scores.
 
         Args:
-            shap_importance: Array of mean absolute SHAP values, one per feature.
-            perm_importance: Array of permutation importance values, one per feature.
+            shap_importance: Array of mean absolute SHAP values, one per
+                feature.
+            perm_importance: Array of permutation importance values, one per
+                feature.
 
         Returns:
             A tuple of (is_harmful, harm_reasons) where:
@@ -52,23 +54,33 @@ class HarmDetector:
         harm_reasons: list[str] = []
 
         for i in range(n_features):
-            reasons = []
+            low_shap = shap_importance[i] < self.shap_threshold
+            low_perm = perm_importance[i] < self.perm_threshold
 
-            if shap_importance[i] < self.shap_threshold:
-                reasons.append(
-                    f"low SHAP importance"
-                    f" ({shap_importance[i]:.4f} < {self.shap_threshold})"
+            if low_shap and low_perm:
+                reason = (
+                    "The model ignores this feature entirely — its SHAP "
+                    f"weight is near zero ({shap_importance[i]:.3f}) and "
+                    "shuffling it has no effect on predictions."
                 )
-
-            if perm_importance[i] < self.perm_threshold:
-                reasons.append(
-                    f"low permutation importance"
-                    f" ({perm_importance[i]:.4f} < {self.perm_threshold})"
-                )
-
-            if reasons:
                 is_harmful[i] = True
-                harm_reasons.append("; ".join(reasons))
+                harm_reasons.append(reason)
+            elif low_shap:
+                reason = (
+                    "The model assigns almost no weight to this feature "
+                    f"(SHAP: {shap_importance[i]:.3f}). It contributes "
+                    "negligible signal to predictions."
+                )
+                is_harmful[i] = True
+                harm_reasons.append(reason)
+            elif low_perm:
+                reason = (
+                    "Shuffling this feature does not affect model "
+                    "performance, meaning the model is not using it in "
+                    "practice."
+                )
+                is_harmful[i] = True
+                harm_reasons.append(reason)
             else:
                 harm_reasons.append("")
 

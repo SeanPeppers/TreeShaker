@@ -7,6 +7,7 @@ import pandas as pd
 from .config import Config
 from .harm_detection import HarmDetector
 from .importance import compute_permutation_importance, compute_shap_importance
+from .leakage_detection import LeakageDetector
 from .utils import get_metric_fn, load_csv, save_results
 
 
@@ -21,7 +22,8 @@ class FeatureSelectionPipeline:
     4. Compute SHAP importance for each feature.
     5. Compute permutation importance for each feature.
     6. Flag harmful features using both importance signals.
-    7. Save results to CSV or HTML.
+    7. Detect data leakage warnings.
+    8. Save results to CSV or HTML.
 
     Args:
         config: A Config instance describing all pipeline settings.
@@ -175,7 +177,9 @@ class FeatureSelectionPipeline:
 
         Returns:
             DataFrame with columns: feature_name, shap_importance,
-            permutation_importance, is_harmful, harm_reason.
+            permutation_importance, recommendation, reason.
+            recommendation is "Drop", "Caution", or "Keep".
+            reason is a plain English explanation (empty string if "Keep").
             Sorted by shap_importance descending.
         """
         self.load_data()
@@ -208,14 +212,42 @@ class FeatureSelectionPipeline:
             perm_importance=perm_importance,
         )
 
+        leakage_detector = LeakageDetector(self.config.leakage_config)
+        combined_data = pd.concat([self.train_data, self.val_data], ignore_index=True)
+        leakage_warnings = leakage_detector.detect(
+            df=combined_data,
+            target_column=self.config.target_column,
+            feature_names=self.feature_names,
+            shap_importance=shap_importance,
+        )
+
+        recommendations = []
+        reasons = []
+        for i, feature in enumerate(self.feature_names):
+            lk_warnings = leakage_warnings[feature]
+            lk_text = " | ".join(lk_warnings) if lk_warnings else ""
+
+            if is_harmful[i] and lk_text:
+                recommendations.append("Drop")
+                reasons.append(harm_reasons[i] + " Also: " + lk_text)
+            elif is_harmful[i]:
+                recommendations.append("Drop")
+                reasons.append(harm_reasons[i])
+            elif lk_text:
+                recommendations.append("Caution")
+                reasons.append(lk_text)
+            else:
+                recommendations.append("Keep")
+                reasons.append("")
+
         self.results = (
             pd.DataFrame(
                 {
                     "feature_name": self.feature_names,
                     "shap_importance": shap_importance,
                     "permutation_importance": perm_importance,
-                    "is_harmful": is_harmful,
-                    "harm_reason": harm_reasons,
+                    "recommendation": recommendations,
+                    "reason": reasons,
                 }
             )
             .sort_values("shap_importance", ascending=False)
@@ -228,9 +260,10 @@ class FeatureSelectionPipeline:
             output_format=self.config.output_format,
         )
 
-        n_harmful = self.results["is_harmful"].sum()
+        n_drop = (self.results["recommendation"] == "Drop").sum()
+        n_caution = (self.results["recommendation"] == "Caution").sum()
         self.logger.info(
-            f"Done. {len(self.results)} features evaluated,"
-            f" {n_harmful} flagged as harmful."
+            f"Done. {len(self.results)} features evaluated:"
+            f" {n_drop} to drop, {n_caution} flagged as caution."
         )
         return self.results

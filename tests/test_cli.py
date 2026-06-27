@@ -93,4 +93,5 @@ def test_main_end_to_end(binary_csv, tmp_path):
     assert result == 0
     df = pd.read_csv(output)
     assert "feature_name" in df.columns
+    assert "recommendation" in df.columns
     assert len(df) == 10

@@ -2,6 +2,7 @@
 
 from .config import Config, OptunaConfig, XGBoostConfig
 from .exceptions import ConfigError, TreeShakerError, ValidationError
+from .leakage_detection import LeakageConfig, LeakageDetector
 from .pipeline import FeatureSelectionPipeline
 
 __version__ = "0.1.0"
@@ -11,6 +12,8 @@ __all__ = [
     "Config",
     "OptunaConfig",
     "XGBoostConfig",
+    "LeakageConfig",
+    "LeakageDetector",
     "TreeShakerError",
     "ValidationError",
     "ConfigError",

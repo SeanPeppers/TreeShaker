@@ -5,6 +5,7 @@ import logging
 
 from .config import Config, OptunaConfig, XGBoostConfig
 from .exceptions import ConfigError, TreeShakerError
+from .leakage_detection import LeakageConfig
 from .pipeline import FeatureSelectionPipeline
 
 
@@ -73,6 +74,24 @@ def parse_arguments():
         " harmful. (default: 0.05)",
     )
     parser.add_argument(
+        "--target-corr-threshold",
+        type=float,
+        default=0.95,
+        help="Flag features with |correlation to target| above this. (default: 0.95)",
+    )
+    parser.add_argument(
+        "--dominant-shap-fraction",
+        type=float,
+        default=0.7,
+        help="Flag a feature that accounts for more than this fraction"
+        " of total SHAP. (default: 0.7)",
+    )
+    parser.add_argument(
+        "--skip-leakage-check",
+        action="store_true",
+        help="Disable leakage and logical error detection.",
+    )
+    parser.add_argument(
         "--test-size",
         type=float,
         default=0.2,
@@ -109,6 +128,11 @@ def main() -> int:
         logger.error(f"Invalid --xgboost-params JSON: {exc}")
         return 1
 
+    leakage_config = LeakageConfig(
+        target_corr_threshold=args.target_corr_threshold,
+        dominant_shap_fraction=args.dominant_shap_fraction,
+    )
+
     try:
         config = Config(
             input_file=args.input,
@@ -126,6 +150,7 @@ def main() -> int:
             xgboost_config=XGBoostConfig(extra_params=xgb_params),
             shap_importance_threshold=args.shap_threshold,
             permutation_importance_threshold=args.perm_threshold,
+            leakage_config=leakage_config,
             verbose=args.verbose,
         )
     except ConfigError as exc:
