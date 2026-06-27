@@ -1,6 +1,7 @@
 """Utility functions for TreeShaker."""
 
 import logging
+import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -337,6 +338,26 @@ def get_metric_fn(task: str, override: str | None = None):
     if task == "regression":
         return lambda y_true, y_pred: -mean_squared_error(y_true, y_pred)
     raise ValueError(f"Unknown task: {task!r}")
+
+
+def derive_output_stem(output_file: str) -> str:
+    """Return output_file with its final extension removed.
+
+    Shared by every "<output_stem>_<suffix>.csv" derived-output-path site
+    (group summary, SHAP interactions, synthetic feature suggestions, and
+    the MCP server's mirrored output_files dict), which otherwise differ
+    only in trivial extension-stripping mechanics (`os.path.splitext` vs.
+    `str.rsplit(".", 1)`) repeated at each call site.
+
+    Args:
+        output_file: Path to the main results output file, e.g.
+            "results.csv" or "out/report.html".
+
+    Returns:
+        output_file with its final extension removed, e.g. "results" or
+        "out/report".
+    """
+    return os.path.splitext(output_file)[0]
 
 
 def save_results(

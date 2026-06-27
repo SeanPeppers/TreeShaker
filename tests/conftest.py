@@ -142,6 +142,32 @@ def cli_argv(
     ]
 
 
+def _patch_shap_tree_explainer_spy(monkeypatch, on_call):
+    """Patch ``treeshaker.importance.shap.TreeExplainer`` with a spy that
+    calls ``on_call(X, kwargs)`` on every ``shap_values`` invocation, while
+    still delegating to the real TreeExplainer for the computation.
+
+    Shared by ``shap_row_count_spy`` and ``shap_additivity_kwarg_spy``,
+    which otherwise each wrap the same ``TreeExplainer.__init__``/
+    ``shap_values`` delegation in their own near-identical class -- this
+    factors out that wrapper, leaving each fixture to decide only what to
+    record from a call.
+    """
+    import shap
+
+    original_tree_explainer = shap.TreeExplainer
+
+    class _SpyExplainer:
+        def __init__(self, m):
+            self._inner = original_tree_explainer(m)
+
+        def shap_values(self, X, **kwargs):
+            on_call(X, kwargs)
+            return self._inner.shap_values(X, **kwargs)
+
+    monkeypatch.setattr("treeshaker.importance.shap.TreeExplainer", _SpyExplainer)
+
+
 @pytest.fixture
 def shap_row_count_spy(monkeypatch):
     """Patch ``treeshaker.importance.shap.TreeExplainer`` with a spy that
@@ -150,18 +176,25 @@ def shap_row_count_spy(monkeypatch):
 
     Returns the ``seen_rows`` list, appended to on every ``shap_values`` call.
     """
-    import shap
-
     seen_rows: list = []
-    original_tree_explainer = shap.TreeExplainer
-
-    class _SpyExplainer:
-        def __init__(self, m):
-            self._inner = original_tree_explainer(m)
-
-        def shap_values(self, X, check_additivity=True):
-            seen_rows.append(len(X))
-            return self._inner.shap_values(X, check_additivity=check_additivity)
-
-    monkeypatch.setattr("treeshaker.importance.shap.TreeExplainer", _SpyExplainer)
+    _patch_shap_tree_explainer_spy(
+        monkeypatch, on_call=lambda X, kwargs: seen_rows.append(len(X))
+    )
     return seen_rows
+
+
+@pytest.fixture
+def shap_kwargs_spy(monkeypatch):
+    """Patch ``treeshaker.importance.shap.TreeExplainer`` with a spy that
+    records the kwargs passed to ``shap_values`` on each call (e.g.
+    ``check_additivity``), while still delegating to the real
+    TreeExplainer for the computation.
+
+    Returns the ``seen_kwargs`` dict, updated with the kwargs from the
+    most recent ``shap_values`` call.
+    """
+    seen_kwargs: dict = {}
+    _patch_shap_tree_explainer_spy(
+        monkeypatch, on_call=lambda X, kwargs: seen_kwargs.update(kwargs)
+    )
+    return seen_kwargs

@@ -203,7 +203,9 @@ def test_shap_importance_handles_high_cardinality_missing_data(
     assert (importance >= 0).all()
 
 
-def test_shap_importance_passes_check_additivity_false(fitted_binary_model):
+def test_shap_importance_passes_check_additivity_false(
+    fitted_binary_model, shap_kwargs_spy
+):
     """compute_shap_importance must call shap_values with check_additivity=False.
 
     This guards against a regression of the additivity-check crash even in
@@ -212,27 +214,8 @@ def test_shap_importance_passes_check_additivity_false(fitted_binary_model):
     argument, this test catches it via a spy on TreeExplainer.shap_values.
     """
     model, df, feature_names = fitted_binary_model
-    original_tree_explainer = __import__("shap").TreeExplainer
-    received_kwargs = {}
-
-    class _SpyExplainer:
-        def __init__(self, m):
-            self._inner = original_tree_explainer(m)
-
-        def shap_values(self, X, **kwargs):
-            received_kwargs.update(kwargs)
-            return self._inner.shap_values(X, **kwargs)
-
-    import treeshaker.importance as importance_module
-
-    original = importance_module.shap.TreeExplainer
-    importance_module.shap.TreeExplainer = _SpyExplainer
-    try:
-        compute_shap_importance(model, df, feature_names)
-    finally:
-        importance_module.shap.TreeExplainer = original
-
-    assert received_kwargs.get("check_additivity") is False
+    compute_shap_importance(model, df, feature_names)
+    assert shap_kwargs_spy.get("check_additivity") is False
 
 
 def test_permutation_importance_shape(fitted_binary_model):

@@ -29,6 +29,7 @@ from .dtype_handling import _looks_like_date_strings, _looks_like_free_text
 from .exceptions import TreeShakerError
 from .pipeline import FeatureSelectionPipeline
 from .synthetic_features import SyntheticConfig
+from .utils import derive_output_stem
 
 try:
     from mcp.server.fastmcp import FastMCP
@@ -219,14 +220,12 @@ def run_pipeline(
     ]
 
     output_files = {"results": config.output_file}
+    stem = derive_output_stem(config.output_file)
     if pipeline.group_summary is not None:
-        stem = config.output_file.rsplit(".", 1)[0]
         output_files["groups"] = f"{stem}_groups.csv"
     if pipeline.interactions is not None:
-        stem = config.output_file.rsplit(".", 1)[0]
         output_files["interactions"] = f"{stem}_interactions.csv"
     if pipeline.suggested_features is not None:
-        stem = config.output_file.rsplit(".", 1)[0]
         output_files["suggested_features"] = f"{stem}_suggested_features.csv"
 
     return {

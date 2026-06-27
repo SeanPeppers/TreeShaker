@@ -1,7 +1,6 @@
 """Core feature selection pipeline orchestration."""
 
 import logging
-import os
 from collections import defaultdict
 from typing import Any
 
@@ -26,6 +25,7 @@ from .residual_diagnostics import (
 from .synthetic_features import SyntheticFeatureSuggestion, suggest_synthetic_features
 from .utils import (
     check_class_imbalance,
+    derive_output_stem,
     get_metric_fn,
     load_csv,
     resolve_xgboost_device,
@@ -676,7 +676,7 @@ class FeatureSelectionPipeline:
                 shap_importance=shap_importance,
             )
             self.group_summary = group_summary
-            stem, _ = os.path.splitext(self.config.output_file)
+            stem = derive_output_stem(self.config.output_file)
             groups_path = f"{stem}_groups.csv"
             group_summary.to_csv(groups_path, index=False)
             self.logger.info(
@@ -689,7 +689,7 @@ class FeatureSelectionPipeline:
                 data=self.test_data,
                 feature_names=self.feature_names,
             )
-            stem, _ = os.path.splitext(self.config.output_file)
+            stem = derive_output_stem(self.config.output_file)
             interactions_file = f"{stem}_interactions.csv"
             self.interactions.to_csv(interactions_file, index=False)
             self.logger.info(f"SHAP interaction values saved to {interactions_file}")
@@ -703,7 +703,7 @@ class FeatureSelectionPipeline:
                     random_seed=self.config.random_seed,
                     config=self.config.synthetic_config,
                 )
-                stem, _ = os.path.splitext(self.config.output_file)
+                stem = derive_output_stem(self.config.output_file)
                 suggestions_file = f"{stem}_suggested_features.csv"
                 pd.DataFrame([vars(s) for s in self.suggested_features]).to_csv(
                     suggestions_file, index=False

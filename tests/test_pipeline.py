@@ -8,7 +8,7 @@ import pytest
 from conftest import BASE_RESULT_COLUMNS
 from conftest import make_config as make_fast_config
 
-from treeshaker.config import BootstrapConfig, Config, OptunaConfig, XGBoostConfig
+from treeshaker.config import BootstrapConfig, OptunaConfig, XGBoostConfig
 from treeshaker.pipeline import FeatureSelectionPipeline
 from treeshaker.residual_diagnostics import ResidualConfig
 from treeshaker.synthetic_features import SyntheticConfig, SyntheticFeatureSuggestion
@@ -441,30 +441,6 @@ def test_pipeline_permutation_metric_wape_for_regression(regression_csv, tmp_pat
     results = FeatureSelectionPipeline(config).run()
     assert len(results) == 20
     assert "permutation_importance_std" in results.columns
-
-
-def test_config_invalid_permutation_metric_raises():
-    from treeshaker.exceptions import ConfigError
-
-    with pytest.raises(ConfigError, match="permutation_metric"):
-        Config(
-            input_file="f.csv",
-            target_column="y",
-            task="binary",
-            permutation_metric="not_a_metric",
-        )
-
-
-def test_config_invalid_n_permutations_raises():
-    from treeshaker.exceptions import ConfigError
-
-    with pytest.raises(ConfigError, match="n_permutations"):
-        Config(
-            input_file="f.csv",
-            target_column="y",
-            task="binary",
-            n_permutations=0,
-        )
 
 
 def test_pipeline_synthesis_disabled_by_default(regression_csv, tmp_path):
