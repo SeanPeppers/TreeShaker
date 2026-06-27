@@ -4,6 +4,7 @@ import pytest
 
 from treeshaker.config import Config, OptunaConfig, XGBoostConfig
 from treeshaker.exceptions import ConfigError
+from treeshaker.synthetic_features import SyntheticConfig
 
 
 def test_xgboost_config_to_dict_includes_extra_params():
@@ -186,4 +187,31 @@ def test_config_invalid_permutation_metric_raises():
             target_column="y",
             task="binary",
             permutation_metric="bogus",
+        )
+
+
+def test_config_synthetic_config_defaults():
+    cfg = Config(input_file="f.csv", target_column="y", task="regression")
+    assert cfg.synthetic_config.synthesize_from_interactions is False
+    assert cfg.synthetic_config.interaction_top_n == 5
+    assert cfg.synthetic_config.mi_threshold == 0.01
+
+
+def test_config_invalid_synthetic_mi_threshold_raises():
+    with pytest.raises(ConfigError, match="mi_threshold"):
+        Config(
+            input_file="f.csv",
+            target_column="y",
+            task="binary",
+            synthetic_config=SyntheticConfig(mi_threshold=-0.1),
+        )
+
+
+def test_config_invalid_synthetic_interaction_top_n_raises():
+    with pytest.raises(ConfigError, match="interaction_top_n"):
+        Config(
+            input_file="f.csv",
+            target_column="y",
+            task="binary",
+            synthetic_config=SyntheticConfig(interaction_top_n=0),
         )

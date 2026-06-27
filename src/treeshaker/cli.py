@@ -9,6 +9,7 @@ from .exceptions import ConfigError, TreeShakerError
 from .leakage_detection import LeakageConfig
 from .pipeline import FeatureSelectionPipeline
 from .residual_diagnostics import ResidualConfig
+from .synthetic_features import SyntheticConfig
 from .utils import VALID_PERMUTATION_METRICS
 
 
@@ -161,6 +162,31 @@ def parse_arguments() -> argparse.Namespace:
         " this value. Only used when --check-residuals is set. (default: 0.3)",
     )
     parser.add_argument(
+        "--synthesize-features",
+        action="store_true",
+        help="Suggest candidate pairwise-product features from the"
+        " strongest SHAP interactions, scored by mutual information"
+        " (opt-in, advisory only -- never auto-added to the model). Requires"
+        " --shap-interactions to also be set. Saves candidates exceeding"
+        " --synthesis-mi-threshold to <output_stem>_suggested_features.csv.",
+    )
+    parser.add_argument(
+        "--synthesis-top-n",
+        type=int,
+        default=5,
+        help="Number of strongest SHAP-interacting pairs to consider as"
+        " synthetic feature candidates. Only used when --synthesize-features"
+        " is set. (default: 5)",
+    )
+    parser.add_argument(
+        "--synthesis-mi-threshold",
+        type=float,
+        default=0.01,
+        help="Minimum mutual information score a synthetic feature"
+        " candidate must exceed to be reported. Only used when"
+        " --synthesize-features is set. (default: 0.01)",
+    )
+    parser.add_argument(
         "--imbalance-threshold",
         type=float,
         default=0.1,
@@ -295,6 +321,11 @@ def main() -> int:
             n_permutations=args.n_permutations,
             permutation_metric=args.permutation_metric,
             shap_sample_size=args.shap_sample_size,
+            synthetic_config=SyntheticConfig(
+                synthesize_from_interactions=args.synthesize_features,
+                interaction_top_n=args.synthesis_top_n,
+                mi_threshold=args.synthesis_mi_threshold,
+            ),
         )
     except ConfigError as exc:
         logger.error(f"Configuration error: {exc}")
