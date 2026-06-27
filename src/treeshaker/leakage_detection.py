@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
+from scipy.stats.contingency import association
 from sklearn.linear_model import LinearRegression
 
 
@@ -16,6 +17,17 @@ class LeakageConfig:
         target_corr_threshold: Flag features whose absolute correlation
             with the target exceeds this value. High correlation may
             indicate the feature was derived from the target. Default 0.95.
+        categorical_assoc_threshold: Flag categorical (non-numeric) features
+            whose bias-corrected Cramer's V association with the target
+            exceeds this value, for binary/multiclass classification tasks.
+            Cramer's V ranges from 0 (no association) to 1 (one variable
+            fully determines the other), so a very high value can mean the
+            feature is a near-perfect proxy for the target -- e.g. a
+            post-outcome categorical field that was recorded after the
+            target was known. This check only applies to classification
+            tasks; for regression it is skipped (see `_check_target_correlation`
+            for the equivalent numeric-feature check, which covers
+            regression). Default 0.8.
         dominant_shap_fraction: Flag a feature if it accounts for more
             than this fraction of total SHAP importance. A single feature
             dominating this strongly is unusual and worth investigating.
@@ -50,6 +62,7 @@ class LeakageConfig:
     """
 
     target_corr_threshold: float = 0.95
+    categorical_assoc_threshold: float = 0.8
     dominant_shap_fraction: float = 0.7
     near_constant_threshold: float = 0.99
     near_duplicate_corr_threshold: float = 0.98
@@ -94,10 +107,16 @@ class LeakageDetector:
     """
     Detect features that may be causing data leakage or are logically suspect.
 
-    Runs six independent checks against each feature:
+    Runs seven independent checks against each feature:
 
     - **Target correlation**: A feature that is almost perfectly correlated
       with the target may have been derived from it, which would be leakage.
+    - **Categorical target association**: For classification tasks, a
+      categorical feature whose bias-corrected Cramer's V association with
+      the target is very high may be a near-perfect proxy for the target
+      (e.g. a post-outcome field), which would be leakage. This is the
+      categorical analogue of the target correlation check above, since
+      Pearson correlation only applies to numeric columns.
     - **SHAP dominance**: If one feature accounts for the vast majority of
       the model's attention, it may contain information that shouldn't be
       available at prediction time.
@@ -136,6 +155,7 @@ class LeakageDetector:
         target_column: str,
         feature_names: list[str],
         shap_importance: np.ndarray,
+        task: str = "binary",
     ) -> dict[str, list[str]]:
         """
         Run all leakage checks and return plain-English warnings per feature.
@@ -146,6 +166,9 @@ class LeakageDetector:
             feature_names: Ordered list of feature column names.
             shap_importance: Array of mean absolute SHAP values, one per
                 feature in the same order as feature_names.
+            task: One of "binary", "multiclass", or "regression". Used by
+                the categorical-target-association check, which only
+                applies to classification tasks. Default "binary".
 
         Returns:
             A dict mapping each feature name to a list of warning strings.
@@ -154,14 +177,18 @@ class LeakageDetector:
         Note:
             Features whose name matches a temporal pattern (see
             `LeakageConfig.temporal_feature_patterns`) are exempt from the
-            target-correlation check by default, since lags/rolling
-            windows/etc. are *expected* to correlate highly with the
-            target. Use `detect_temporal_structure` separately to check
-            those features for structural consistency instead.
+            target-correlation and categorical-target-association checks
+            by default, since lags/rolling windows/etc. are *expected* to
+            correlate highly with the target. Use `detect_temporal_structure`
+            separately to check those features for structural consistency
+            instead.
         """
         warnings: dict[str, list[str]] = {name: [] for name in feature_names}
 
         self._check_target_correlation(df, target_column, feature_names, warnings)
+        self._check_categorical_target_association(
+            df, target_column, feature_names, task, warnings
+        )
         self._check_dominant_shap(feature_names, shap_importance, warnings)
         self._check_near_constant(df, feature_names, warnings)
         self._check_near_duplicates(df, feature_names, warnings)
@@ -293,6 +320,87 @@ class LeakageDetector:
                     f" This feature may have been derived from or calculated"
                     f" using the target variable, which would be data"
                     f" leakage."
+                )
+
+    def _check_categorical_target_association(
+        self,
+        df: pd.DataFrame,
+        target_column: str,
+        feature_names: list[str],
+        task: str,
+        warnings: dict[str, list[str]],
+    ) -> None:
+        """Flag categorical features with suspiciously high association
+        with a classification target.
+
+        `_check_target_correlation` only looks at numeric features (Pearson
+        correlation is undefined for categoricals), so a categorical
+        feature that is effectively a proxy for the target -- e.g. a
+        post-outcome field recorded after the target was already known --
+        could otherwise sail through with zero leakage warnings even when
+        it dominates SHAP importance. This check fills that gap using
+        bias-corrected Cramer's V (Bergsma 2013), a standard measure of
+        association between two categorical variables that ranges from 0
+        (no association) to 1 (one variable fully determines the other).
+
+        Only applies to classification tasks ("binary"/"multiclass"). For
+        regression, the target is continuous and a contingency-table-based
+        association measure does not apply cleanly, so this check is
+        skipped entirely -- the numeric `_check_target_correlation` check
+        already covers numeric features for regression, and a categorical
+        feature in a regression problem would need an ANOVA/eta-squared
+        style check, which is out of scope here.
+
+        Missing values are treated as their own category rather than
+        dropped. This matters in practice: for a column like the Titanic
+        dataset's `boat` (lifeboat assignment, recorded only for
+        survivors), *whether* the value is missing is itself the leakage
+        signal -- dropping NaN rows would throw that signal away and
+        could mask a real proxy-for-target column.
+        """
+        if task not in ("binary", "multiclass"):
+            return
+
+        target = df[target_column]
+
+        for name in feature_names:
+            col = df[name]
+            if pd.api.types.is_numeric_dtype(col):
+                continue
+            if self.config.exempt_temporal_features and self._is_temporal_feature(name):
+                continue
+
+            target_valid = target.notna()
+            if target_valid.sum() < 2:
+                continue
+            col_filled = (
+                col[target_valid]
+                .astype(object)
+                .where(col[target_valid].notna(), "__MISSING__")
+            )
+
+            contingency = pd.crosstab(col_filled, target[target_valid])
+            if contingency.shape[0] < 2 or contingency.shape[1] < 2:
+                continue
+
+            try:
+                cramers_v = association(
+                    contingency.to_numpy(), method="cramer", correction=True
+                )
+            except (ValueError, ZeroDivisionError):
+                continue
+
+            if pd.isna(cramers_v):
+                continue
+
+            if cramers_v >= self.config.categorical_assoc_threshold:
+                warnings[name].append(
+                    f"Suspiciously high association with the target"
+                    f" (Cramer's V={cramers_v:.2f}, at or above the"
+                    f" {self.config.categorical_assoc_threshold:.2f} threshold)."
+                    f" This categorical feature may have been recorded"
+                    f" after the outcome was known or otherwise derived"
+                    f" from the target, which would be data leakage."
                 )
 
     def _check_dominant_shap(

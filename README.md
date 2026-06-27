@@ -15,7 +15,7 @@ Most feature-importance tools give you a single number per feature from a single
 - **Stability, not just a point estimate** — permutation importance is averaged over multiple independent shuffles (`--n-permutations`, reporting both mean and std), and an opt-in bootstrap ensemble (`--n-bootstrap`) refits the model on resamples to show whether a feature's rank holds up or jumps around. See [Permutation importance repeats](#permutation-importance-repeats-and-metric-override) and [Bootstrap importance stability](#bootstrap-importance-stability-opt-in).
 - **Plain-English explanations** — each feature gets a Drop/Caution/Keep recommendation with reasoning you can read and act on, not just a bare number.
 - **Cross-checked, not single-signal** — SHAP, permutation importance, mutual information, leakage statistics, and (opt-in) residual correlation are all computed independently and reconciled, so a single noisy metric can't drive a Drop decision on its own.
-- **Leakage detection** — catches suspicious patterns: high target correlation, SHAP dominance, near-duplicates, multicollinearity (VIF), suspicious column names.
+- **Leakage detection** — catches suspicious patterns: high target correlation (numeric and categorical via Cramer's V), SHAP dominance, near-duplicates, multicollinearity (VIF), suspicious column names.
 - **Three output formats** — CSV results, HTML reports, or Python API.
 
 ## Table of Contents
@@ -294,18 +294,21 @@ Both thresholds are configurable. Raise them to be more aggressive about flaggin
 
 ## Leakage detection
 
-Six independent checks flag features that may be causing data leakage or are otherwise logically suspect. A feature can trigger more than one.
+Seven independent checks flag features that may be causing data leakage or are otherwise logically suspect. A feature can trigger more than one.
 
 | Check | Trigger | Why it matters |
 |---|---|---|
 | Target correlation | `\|r\|` with target ≥ `--target-corr-threshold` (default `0.95`) | Feature may have been derived from the target |
+| Categorical target association | Bias-corrected Cramer's V with target ≥ `categorical_assoc_threshold` (default `0.8`) | Non-numeric feature may be a near-perfect proxy for the target |
 | SHAP dominance | One feature accounts for ≥ `--dominant-shap-fraction` (default `0.7`) of total SHAP | A single feature this dominant may leak future/target info |
 | Near-constant | Same value in > 99% of rows | No signal, wastes model capacity |
 | Near-duplicate | Correlation ≥ 0.98 with another feature | Redundant — adds no extra signal |
 | Multicollinearity (VIF) | Variance Inflation Factor ≥ `vif_threshold` (default `10.0`) | Feature is a near-linear combination of *other* features — redundancy pairwise correlation alone can miss |
 | Suspicious names | Matches patterns like `_id`, `future_`, `label`, `target` | Likely an identifier or future-leaking column |
 
-Leakage warnings produce a `Caution` recommendation on their own; combined with harm detection they escalate to `Drop`. Disable all six checks with `--skip-leakage-check`.
+The target correlation check only applies to numeric features (Pearson correlation is undefined for categoricals), so the categorical target association check fills that gap for classification tasks (`binary`/`multiclass`) using bias-corrected Cramer's V — this is what catches leakage like the Titanic dataset's `boat` column (lifeboat assignment, recorded only for survivors and thus a near-perfect proxy for `survived`), which is non-numeric and so was previously invisible to the correlation check. Missing values are treated as their own category rather than dropped, since for proxy columns like `boat` the presence/absence of a value is itself the leakage signal. Regression targets are not currently covered by this check.
+
+Leakage warnings produce a `Caution` recommendation on their own; combined with harm detection they escalate to `Drop`. Disable all seven checks with `--skip-leakage-check`.
 
 Unlike importance evaluation (SHAP, permutation importance, mutual information — all computed on the held-out `test` set, see [How it works](#how-it-works)), leakage detection is a statistical property check across the *entire* dataset, not a held-out-generalization concern. So these checks intentionally run against `train` + `val` + `test` combined, to see the full dataset's correlation/VIF/duplicate statistics.
 
