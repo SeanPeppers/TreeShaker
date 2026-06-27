@@ -32,11 +32,16 @@ def compute_shap_importance(
     explainer = shap.TreeExplainer(model)
     shap_values = explainer.shap_values(data[feature_names])
 
-    # Multiclass returns a list of arrays, one per class
     if isinstance(shap_values, list):
-        # Stack to (n_classes, n_samples, n_features), take mean absolute
+        # Older shap versions: multiclass returns a list of arrays, one per
+        # class, each shaped (n_samples, n_features).
         stacked = np.stack([np.abs(sv) for sv in shap_values], axis=0)
         mean_abs = stacked.mean(axis=0).mean(axis=0)
+    elif shap_values.ndim == 3:
+        # Newer shap versions: multiclass returns a single ndarray shaped
+        # (n_samples, n_features, n_classes). Average over samples and
+        # classes to collapse to one value per feature.
+        mean_abs = np.abs(shap_values).mean(axis=0).mean(axis=-1)
     else:
         mean_abs = np.abs(shap_values).mean(axis=0)
 

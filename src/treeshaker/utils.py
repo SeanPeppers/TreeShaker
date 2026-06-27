@@ -108,7 +108,7 @@ def save_results(
 
     Args:
         results: DataFrame with columns: feature_name, shap_importance,
-            permutation_importance, is_harmful, harm_reason.
+            permutation_importance, recommendation, reason.
         output_file: Path to write the output file.
         output_format: Either "csv" or "html".
 
@@ -120,11 +120,11 @@ def save_results(
         results.to_csv(output_file, index=False)
         logger.info(f"Results saved to {output_file}")
     elif output_format == "html":
-        n_harmful = results["is_harmful"].sum()
+        n_drop = (results["recommendation"] == "Drop").sum()
         n_total = len(results)
         summary = (
             f"<p><strong>Total features:</strong> {n_total} | "
-            f"<strong>Harmful features:</strong> {n_harmful}</p>"
+            f"<strong>Recommended to drop:</strong> {n_drop}</p>"
         )
         table = results.to_html(index=False, escape=False)
         html = f"""<!DOCTYPE html>

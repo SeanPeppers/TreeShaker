@@ -66,7 +66,7 @@ def test_near_constant_flagged():
         }
     )
     detector = LeakageDetector(LeakageConfig(near_constant_threshold=0.98))
-    shap = np.array([0.1, 0.3])
+    shap = np.array([0.4, 0.6])
     warnings = detector.detect(
         df, "target", ["constant_feature", "normal_feature"], shap
     )
@@ -141,6 +141,8 @@ def test_custom_thresholds():
     assert len(warnings["feat"]) > 0
 
     # With high threshold, should not flag
-    detector_loose = LeakageDetector(LeakageConfig(target_corr_threshold=0.999))
+    detector_loose = LeakageDetector(
+        LeakageConfig(target_corr_threshold=0.999, dominant_shap_fraction=1.1)
+    )
     warnings = detector_loose.detect(df, "target", ["feat"], np.array([0.5]))
     assert len(warnings["feat"]) == 0
