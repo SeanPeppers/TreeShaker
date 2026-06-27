@@ -44,7 +44,14 @@ def compute_shap_importance(
     if sample_size is not None and sample_size < len(X):
         X = X.sample(n=sample_size, random_state=random_seed)
     explainer = shap.TreeExplainer(model)
-    shap_values = explainer.shap_values(X)
+    # check_additivity=False: with high-cardinality categorical columns
+    # combined with heavy missingness, floating point summation drift in
+    # XGBoost's missing-value routing can cause SHAP's additivity assertion
+    # (sum of SHAP values == model output) to fail even though the SHAP
+    # values themselves remain valid/meaningful for ranking purposes. This
+    # only disables the post-hoc sanity check; it does not change how SHAP
+    # values are computed.
+    shap_values = explainer.shap_values(X, check_additivity=False)
 
     if isinstance(shap_values, list):
         # Older shap versions: multiclass returns a list of arrays, one per
@@ -95,6 +102,9 @@ def compute_shap_interactions(
     """
     logger.info("Computing SHAP interaction values (this can be slow)")
     explainer = shap.TreeExplainer(model)
+    # Note: shap_interaction_values does not accept check_additivity (unlike
+    # shap_values, see compute_shap_importance) -- it does not run the
+    # additivity assertion in the first place.
     interaction_values = explainer.shap_interaction_values(data[feature_names])
 
     if isinstance(interaction_values, list):

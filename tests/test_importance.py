@@ -92,9 +92,9 @@ def test_shap_importance_sample_size_none_uses_all_rows(
         def __init__(self, m):
             self._inner = original_tree_explainer(m)
 
-        def shap_values(self, X):
+        def shap_values(self, X, check_additivity=True):
             seen_rows.append(len(X))
-            return self._inner.shap_values(X)
+            return self._inner.shap_values(X, check_additivity=check_additivity)
 
     monkeypatch.setattr("treeshaker.importance.shap.TreeExplainer", _SpyExplainer)
     compute_shap_importance(model, df, feature_names, sample_size=None)
@@ -113,9 +113,9 @@ def test_shap_importance_sample_size_reduces_rows_passed_to_explainer(
         def __init__(self, m):
             self._inner = original_tree_explainer(m)
 
-        def shap_values(self, X):
+        def shap_values(self, X, check_additivity=True):
             seen_rows.append(len(X))
-            return self._inner.shap_values(X)
+            return self._inner.shap_values(X, check_additivity=check_additivity)
 
     monkeypatch.setattr("treeshaker.importance.shap.TreeExplainer", _SpyExplainer)
     compute_shap_importance(model, df, feature_names, sample_size=20, random_seed=42)
@@ -144,9 +144,9 @@ def test_shap_importance_sample_size_larger_than_data_uses_all_rows(
         def __init__(self, m):
             self._inner = original_tree_explainer(m)
 
-        def shap_values(self, X):
+        def shap_values(self, X, check_additivity=True):
             seen_rows.append(len(X))
-            return self._inner.shap_values(X)
+            return self._inner.shap_values(X, check_additivity=check_additivity)
 
     monkeypatch.setattr("treeshaker.importance.shap.TreeExplainer", _SpyExplainer)
     compute_shap_importance(model, df, feature_names, sample_size=10_000)
@@ -163,6 +163,112 @@ def test_shap_importance_sample_size_reproducible(fitted_binary_model):
         model, df, feature_names, sample_size=20, random_seed=7
     )
     np.testing.assert_array_equal(importance_a, importance_b)
+
+
+@pytest.fixture
+def fitted_high_cardinality_missing_regression_model():
+    """Regression model + data designed to stress SHAP additivity.
+
+    Mirrors the conditions that triggered a real-world
+    ``shap.utils._exceptions.ExplainerError: Additivity check failed in
+    TreeExplainer!`` on the Ames Housing dataset: several high-cardinality
+    categorical columns combined with heavy missingness, which can produce
+    floating point summation drift in XGBoost's missing-value routing large
+    enough to trip SHAP's additivity assertion (even though the SHAP values
+    themselves remain valid/meaningful for ranking).
+    """
+    rng = np.random.default_rng(42)
+    n_samples = 600
+    n_numeric = 6
+    X_numeric, y = make_regression(
+        n_samples=n_samples,
+        n_features=n_numeric,
+        n_informative=4,
+        noise=10.0,
+        random_state=42,
+    )
+    feature_names = [f"num{i}" for i in range(n_numeric)]
+    df = pd.DataFrame(X_numeric, columns=feature_names)
+
+    # Several high-cardinality categorical columns with heavy missingness.
+    cat_feature_names = []
+    for c in range(4):
+        col = f"cat{c}"
+        categories = [f"level_{i}" for i in range(40)]
+        values = rng.choice(categories, size=n_samples).astype(object)
+        # Heavy missingness: ~40% NaN.
+        missing_mask = rng.random(n_samples) < 0.4
+        values[missing_mask] = None
+        col_codes = pd.Categorical(values, categories=categories).codes.astype(float)
+        df[col] = pd.Series(values, dtype="category")
+        cat_feature_names.append(col)
+        # Fold the categorical signal into the target so the model actually
+        # learns to split on these (high-missingness, high-cardinality)
+        # columns rather than ignoring them.
+        y = y + col_codes * 5.0
+
+    df["target"] = y
+    all_feature_names = feature_names + cat_feature_names
+
+    model = xgb.XGBRegressor(
+        n_estimators=50,
+        max_depth=6,
+        random_state=42,
+        verbosity=0,
+        enable_categorical=True,
+    )
+    model.fit(df[all_feature_names], df["target"])
+    return model, df, all_feature_names
+
+
+def test_shap_importance_handles_high_cardinality_missing_data(
+    fitted_high_cardinality_missing_regression_model,
+):
+    """compute_shap_importance must not raise on the additivity-prone case.
+
+    Regression test for the exact crash seen on the Ames Housing dataset:
+    ``ExplainerError: Additivity check failed in TreeExplainer!``. This
+    exercises a synthetic analogue of that scenario (high-cardinality
+    categorical columns with heavy NaN rates); compute_shap_importance
+    should complete and return sane (finite, non-negative) values.
+    """
+    model, df, feature_names = fitted_high_cardinality_missing_regression_model
+    importance = compute_shap_importance(model, df, feature_names)
+    assert importance.shape == (len(feature_names),)
+    assert np.isfinite(importance).all()
+    assert (importance >= 0).all()
+
+
+def test_shap_importance_passes_check_additivity_false(fitted_binary_model):
+    """compute_shap_importance must call shap_values with check_additivity=False.
+
+    This guards against a regression of the additivity-check crash even in
+    cases where the failure mode itself is hard to reproduce
+    deterministically: if a future change drops the check_additivity=False
+    argument, this test catches it via a spy on TreeExplainer.shap_values.
+    """
+    model, df, feature_names = fitted_binary_model
+    original_tree_explainer = __import__("shap").TreeExplainer
+    received_kwargs = {}
+
+    class _SpyExplainer:
+        def __init__(self, m):
+            self._inner = original_tree_explainer(m)
+
+        def shap_values(self, X, **kwargs):
+            received_kwargs.update(kwargs)
+            return self._inner.shap_values(X, **kwargs)
+
+    import treeshaker.importance as importance_module
+
+    original = importance_module.shap.TreeExplainer
+    importance_module.shap.TreeExplainer = _SpyExplainer
+    try:
+        compute_shap_importance(model, df, feature_names)
+    finally:
+        importance_module.shap.TreeExplainer = original
+
+    assert received_kwargs.get("check_additivity") is False
 
 
 def test_permutation_importance_shape(fitted_binary_model):
