@@ -38,9 +38,13 @@ dev = [
 demo = [
     "gradio>=4.0.0",
 ]
+mcp = [
+    "mcp>=1.0.0",
+]
 
 [project.scripts]
 treeshaker = "treeshaker.cli:main"
+treeshaker-mcp = "treeshaker.mcp_server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/treeshaker"]

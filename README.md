@@ -586,6 +586,62 @@ main"). The dev container installs the `demo` extra automatically and
 forwards port `7860` — once it's ready, run `python demo/app.py` in the
 terminal and use the forwarded-port popup to open the UI.
 
+## MCP server (experimental)
+
+TreeShaker ships a local [MCP](https://modelcontextprotocol.io/) (Model
+Context Protocol) server that exposes the pipeline as structured tool calls,
+so an AI assistant such as Claude Code can run feature selection, inspect a
+dataset, read back results, and discover configuration options directly —
+without shelling out to the CLI and parsing CSV/stdout.
+
+It runs locally on whoever's machine has this repo installed; nothing is
+hosted remotely.
+
+**Install:**
+
+```bash
+pip install -e ".[mcp]"
+```
+
+**Run:**
+
+```bash
+python -m treeshaker.mcp_server
+# or, via the installed entry point:
+treeshaker-mcp
+```
+
+This starts a stdio-transport MCP server (the standard pattern for local MCP
+servers) — it's meant to be launched by an MCP client, not run standalone in
+a terminal you watch.
+
+**Tools exposed:**
+
+| Tool | Purpose |
+|---|---|
+| `run_pipeline` | Run the full feature selection pipeline; returns a structured summary (feature counts, top features by SHAP, leakage/harm warnings, output file paths). |
+| `get_recommendations` | Read back a previously-written results file as structured JSON. |
+| `inspect_dataset` | Report per-column dtype, missing-value rate, and preprocessing suggestions for a CSV. |
+| `list_config_schema` | Introspect `Config` (and nested sub-configs) so a client can discover what's configurable. |
+
+**Connecting from Claude Code:** add an entry to your `.mcp.json` (project) or
+`claude_desktop_config.json` (Claude Desktop) pointing at the stdio command:
+
+```json
+{
+  "mcpServers": {
+    "treeshaker": {
+      "command": "python",
+      "args": ["-m", "treeshaker.mcp_server"]
+    }
+  }
+}
+```
+
+If `treeshaker` isn't on the default Python's path, point `command` at the
+interpreter inside the virtualenv where you ran `pip install -e ".[mcp]"`
+instead (e.g. `.venv/bin/python` or `.venv\Scripts\python.exe`).
+
 ## Development
 
 ```bash
