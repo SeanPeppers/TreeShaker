@@ -473,6 +473,10 @@ class FeatureSelectionPipeline:
             feature_names=self.feature_names,
             shap_importance=shap_importance,
         )
+        temporal_structure_warnings = leakage_detector.detect_temporal_structure(
+            df=combined_data,
+            feature_names=self.feature_names,
+        )
 
         residual_correlation = None
         residual_notes: dict[str, str] = {}
@@ -500,6 +504,7 @@ class FeatureSelectionPipeline:
         for i, feature in enumerate(self.feature_names):
             lk_warnings = leakage_warnings[feature]
             residual_note = residual_notes.get(feature, "")
+            temporal_note = " ".join(temporal_structure_warnings.get(feature, []))
 
             if is_harmful[i] and lk_warnings:
                 recommendation = "Drop"
@@ -540,6 +545,17 @@ class FeatureSelectionPipeline:
                 # the recommendation tier.
                 reason = (
                     f"{reason} {residual_note}".strip() if reason else residual_note
+                )
+
+            if temporal_note:
+                # Temporal structure issues (e.g. a lag/rolling feature
+                # whose leading-NaN count doesn't match its name) are a
+                # distinct category from leakage -- a feature-engineering
+                # correctness concern, not evidence of target derivation.
+                # Surfaced via reason without changing the recommendation
+                # tier, kept separate from leakage/residual reasoning.
+                reason = (
+                    f"{reason} {temporal_note}".strip() if reason else temporal_note
                 )
 
             recommendations.append(recommendation)

@@ -204,6 +204,106 @@ def test_multicollinearity_handles_perfect_collinearity():
     assert "infinite" in warnings["feat_c"][0].lower()
 
 
+def test_temporal_feature_high_correlation_not_flagged_as_leakage():
+    """A lag feature normally correlates very highly with the target --
+    that's expected, not leakage, so it should be exempted by default."""
+    rng = np.random.default_rng(42)
+    n = 200
+    # A near-target-equal series (e.g. a slow-moving trend plus tiny
+    # noise) so the lag is highly correlated with the target, like a
+    # real lag feature on autocorrelated time series data would be.
+    target = np.cumsum(rng.normal(0, 0.1, n))
+    lag_7 = pd.Series(target).shift(7)
+    df = pd.DataFrame({"lag_7": lag_7.bfill(), "target": target})
+    detector = LeakageDetector(LeakageConfig(target_corr_threshold=0.5))
+    warnings = detector.detect(df, "target", ["lag_7"], np.array([0.5]))
+    assert not any("correlation" in w.lower() for w in warnings["lag_7"])
+
+
+def test_temporal_feature_nan_mismatch_flagged_as_structural_warning():
+    """A feature named lag_7 should have 7 leading NaNs; if it has a
+    different count, that's a structural warning, not a leakage warning."""
+    rng = np.random.default_rng(42)
+    n = 200
+    target = rng.normal(0, 1, n)
+    # Shift by 3 but name implies lag of 7 -- mismatched leading NaNs.
+    lag_7 = pd.Series(target).shift(3)
+    df = pd.DataFrame({"lag_7": lag_7, "target": target})
+    detector = LeakageDetector()
+
+    leakage_warnings = detector.detect(df, "target", ["lag_7"], np.array([0.5]))
+    structural_warnings = detector.detect_temporal_structure(df, ["lag_7"])
+
+    # Not conflated with leakage warnings.
+    assert not any("correlation" in w.lower() for w in leakage_warnings["lag_7"])
+    assert len(structural_warnings["lag_7"]) > 0
+    assert "temporal structure warning" in structural_warnings["lag_7"][0].lower()
+    assert "3" in structural_warnings["lag_7"][0]
+    assert "7" in structural_warnings["lag_7"][0]
+
+
+def test_temporal_feature_matching_nan_count_not_flagged():
+    """A lag_7 feature with exactly 7 leading NaNs and no other gaps
+    should pass the structural check cleanly."""
+    rng = np.random.default_rng(42)
+    n = 200
+    target = rng.normal(0, 1, n)
+    lag_7 = pd.Series(target).shift(7)
+    df = pd.DataFrame({"lag_7": lag_7, "target": target})
+    detector = LeakageDetector()
+    structural_warnings = detector.detect_temporal_structure(df, ["lag_7"])
+    assert len(structural_warnings["lag_7"]) == 0
+
+
+def test_temporal_feature_mid_series_gap_flagged():
+    """Unexpected NaNs after the leading run (not just at the start)
+    should be flagged even if the leading-NaN count matches the offset."""
+    rng = np.random.default_rng(42)
+    n = 200
+    target = rng.normal(0, 1, n)
+    lag_5 = pd.Series(target).shift(5)
+    lag_5.iloc[50] = np.nan  # inject a mid-series gap
+    df = pd.DataFrame({"lag_5": lag_5, "target": target})
+    detector = LeakageDetector()
+    structural_warnings = detector.detect_temporal_structure(df, ["lag_5"])
+    assert len(structural_warnings["lag_5"]) > 0
+    assert "unexpected" in structural_warnings["lag_5"][0].lower()
+
+
+def test_exempt_temporal_features_false_disables_exemption_and_structural_check():
+    """With exempt_temporal_features=False, temporal features are treated
+    like any other column: the correlation check applies to them, and
+    the structural check is disabled entirely."""
+    rng = np.random.default_rng(42)
+    n = 200
+    target = np.cumsum(rng.normal(0, 0.1, n))
+    lag_7 = pd.Series(target).shift(7).bfill()
+    df = pd.DataFrame({"lag_7": lag_7, "target": target})
+
+    config = LeakageConfig(target_corr_threshold=0.5, exempt_temporal_features=False)
+    detector = LeakageDetector(config)
+
+    leakage_warnings = detector.detect(df, "target", ["lag_7"], np.array([0.5]))
+    assert any("correlation" in w.lower() for w in leakage_warnings["lag_7"])
+
+    structural_warnings = detector.detect_temporal_structure(df, ["lag_7"])
+    assert structural_warnings["lag_7"] == []
+
+
+def test_non_temporal_feature_not_checked_structurally():
+    """A column that doesn't match any temporal pattern should never
+    produce a structural warning, even with leading NaNs."""
+    df = pd.DataFrame(
+        {
+            "feature_a": [np.nan, np.nan, 1.0, 2.0, 3.0],
+            "target": [0.0, 1.0, 0.0, 1.0, 0.0],
+        }
+    )
+    detector = LeakageDetector()
+    structural_warnings = detector.detect_temporal_structure(df, ["feature_a"])
+    assert structural_warnings["feature_a"] == []
+
+
 def test_custom_thresholds():
     rng = np.random.default_rng(42)
     base = rng.normal(0, 1, 200)

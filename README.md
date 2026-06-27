@@ -253,6 +253,14 @@ Leakage warnings produce a `Caution` recommendation on their own; combined with 
 
 Unlike importance evaluation (SHAP, permutation importance, mutual information — all computed on the held-out `test` set, see [How it works](#how-it-works)), leakage detection is a statistical property check across the *entire* dataset, not a held-out-generalization concern. So these checks intentionally run against `train` + `val` + `test` combined, to see the full dataset's correlation/VIF/duplicate statistics.
 
+### Temporal feature exemption
+
+Time-series engineered features — lags, rolling/expanding windows, exponentially-weighted moving averages, shifts, diffs — are *expected* to correlate highly with the target. That's normal signal, not leakage, so flagging it as such would just create noise.
+
+Feature names matching a temporal pattern (`lag_`, `rolling_`, `ewm_`, `shift_`, `diff_`, `expanding_` by default, case-insensitive substring match, configurable via `LeakageConfig.temporal_feature_patterns`) are exempted from the target-correlation check. Set `LeakageConfig(exempt_temporal_features=False)` to disable the exemption and treat temporal features like any other column.
+
+Exempted features aren't given a free pass entirely — instead they get a structural check via `LeakageDetector.detect_temporal_structure()`: the leading-NaN count is compared against the lag/window offset parsed from the feature name (e.g. `lag_7` should have 7 leading NaNs), and any unexpected NaN gaps mid-series are flagged. A mismatch can indicate an off-by-one or windowing bug that leaks future information into earlier rows. This produces a **temporal structure warning**, a category distinct from leakage warnings — it's surfaced informationally in the `reason` column without changing the `Drop`/`Caution`/`Keep` recommendation on its own.
+
 ## Class imbalance warning
 
 Under extreme class imbalance (e.g. a 99%/1% binary target), accuracy and even ROC-AUC can barely move regardless of which feature is shuffled — making permutation importance unreliable. Features can look unimportant simply because the metric is insensitive to what's being shuffled.
