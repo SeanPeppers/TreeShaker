@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from .config import Config
+from .dtype_handling import prepare_feature_dtypes_splits
 from .harm_detection import HarmDetector
 from .importance import (
     compute_mutual_information,
@@ -165,9 +166,26 @@ class FeatureSelectionPipeline:
             val_size=self.config.val_size,
             random_seed=self.config.random_seed,
         )
-        self.feature_names = [
+        feature_names = [
             col for col in self.train_data.columns if col != self.config.target_column
         ]
+
+        # Validate and normalize feature dtypes (datetime expansion,
+        # categorical casting, free-text rejection) once, consistently
+        # across all three splits, before anything is fit. See
+        # dtype_handling.py for the full rationale per dtype category --
+        # in particular why this must be done jointly across train/val/test
+        # rather than independently per split.
+        (
+            self.train_data,
+            self.val_data,
+            self.test_data,
+            self.feature_names,
+            _,
+        ) = prepare_feature_dtypes_splits(
+            self.train_data, self.val_data, self.test_data, feature_names
+        )
+
         self.logger.info(f"Features to evaluate: {len(self.feature_names)}")
 
         combined = pd.concat(
@@ -226,6 +244,11 @@ class FeatureSelectionPipeline:
                 "min_child_weight": trial.suggest_int("min_child_weight", 1, 10),
                 "random_state": self.config.random_seed,
                 "verbosity": 0,
+                # Lets XGBoost natively consume pandas `category` dtype
+                # columns (produced by dtype_handling.prepare_feature_dtypes
+                # for string features) without pre-encoding. A no-op when
+                # there are no categorical columns.
+                "enable_categorical": True,
                 "device": device,
             }
             params.update(xgb_cfg.extra_params)
@@ -283,6 +306,7 @@ class FeatureSelectionPipeline:
             **best_params,
             "random_state": self.config.random_seed,
             "verbosity": 0,
+            "enable_categorical": True,
             "device": resolve_xgboost_device(self.config.xgboost_config.device),
         }
         params.update(self.config.xgboost_config.extra_params)
@@ -336,6 +360,7 @@ class FeatureSelectionPipeline:
             **best_params,
             "random_state": self.config.random_seed,
             "verbosity": 0,
+            "enable_categorical": True,
             "device": resolve_xgboost_device(self.config.xgboost_config.device),
         }
         params.update(self.config.xgboost_config.extra_params)

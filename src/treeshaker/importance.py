@@ -208,8 +208,15 @@ def compute_permutation_importance(
             # keeps results reproducible while still shuffling each
             # column differently across both features and repeats.
             rng = np.random.default_rng(seed=42 + i * n_repeats + r)
-            X_shuffled[feature] = rng.permutation(
-                np.asarray(X_shuffled[feature].values)
+            shuffled_values = rng.permutation(np.asarray(X_shuffled[feature].values))
+            # Re-wrap with the original dtype: for pandas `category` columns
+            # (see dtype_handling.py), permutation via a plain numpy array
+            # silently degrades the dtype to plain object/str, which then
+            # makes XGBoost reject the DataFrame on the next predict() call
+            # with a confusing low-level error. Numeric/bool dtypes are
+            # unaffected by this re-wrap.
+            X_shuffled[feature] = pd.Series(
+                shuffled_values, index=X_shuffled.index, dtype=X[feature].dtype
             )
             shuffled_preds = _get_predictions(model, X_shuffled, use_predict_proba)
             shuffled_score = metric_fn(y, shuffled_preds)
@@ -255,12 +262,47 @@ def compute_mutual_information(
     logger.info("Computing mutual information")
     from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
 
-    X = data[feature_names]
+    X = data[feature_names].copy()
     y = data[target_column]
 
+    # sklearn's mutual_info_* estimators require numeric input -- a pandas
+    # `category` column (see dtype_handling.py, used for string features)
+    # otherwise fails with "could not convert string to float". Encode each
+    # categorical column as integer codes and tell the estimator which
+    # columns are discrete so it uses the appropriate (discrete-discrete or
+    # discrete-continuous) estimator for that column instead of treating
+    # the codes as a continuous quantity.
+    discrete_features: list[bool] = []
+    for name in feature_names:
+        if isinstance(X[name].dtype, pd.CategoricalDtype):
+            X[name] = X[name].cat.codes
+            discrete_features.append(True)
+        else:
+            discrete_features.append(False)
+
+    # Unlike XGBoost (which natively tolerates NaN in numeric features) and
+    # the correlation/VIF-based leakage checks (which use pandas' NaN-safe
+    # .corr()), sklearn's mutual_info_* estimators reject NaN outright with
+    # a low-level "Input X contains NaN" error. Median-impute per column
+    # for this computation only -- this does not touch self.train_data /
+    # self.test_data or any other importance/leakage computation, it only
+    # affects the matrix passed into this one estimator. A column that is
+    # entirely NaN falls back to 0 (median of nothing is undefined; 0 keeps
+    # the column included rather than crashing, and such a column is
+    # already separately flagged by the near-constant leakage check).
+    if X.isna().any().any():
+        for name in feature_names:
+            if X[name].isna().any():
+                median = X[name].median()
+                X[name] = X[name].fillna(median if pd.notna(median) else 0)
+
     if task in ("binary", "multiclass"):
-        scores = mutual_info_classif(X, y, random_state=random_seed)
+        scores = mutual_info_classif(
+            X, y, discrete_features=discrete_features, random_state=random_seed
+        )
     else:
-        scores = mutual_info_regression(X, y, random_state=random_seed)
+        scores = mutual_info_regression(
+            X, y, discrete_features=discrete_features, random_state=random_seed
+        )
 
     return np.asarray(scores)
