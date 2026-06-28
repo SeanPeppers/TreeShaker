@@ -93,6 +93,17 @@ class LeakageConfig:
 
 
 # Column name patterns that suggest identifiers or future-leaking columns.
+#
+# Each entry encodes a whole *token* to match against the column name split
+# on common separators (underscore, camelCase boundaries), not a raw
+# substring -- see `_check_suspicious_names`. A trailing underscore means
+# the token must be the *first* token (suffix-style patterns like "id_",
+# "key_", "future_"); a leading underscore means it must be the *last*
+# token (prefix-style patterns like "_id", "_key", "_future", "_y"); no
+# underscore means it must match any whole token (e.g. "target", "label").
+# This prevents false positives such as "timestamp_year" matching "_y"
+# (the "y" inside "year" is not a standalone token), while still catching
+# genuine cases like "target_y", "label_y", and "id_column".
 _SUSPICIOUS_NAME_PATTERNS = (
     "_id",
     "id_",
@@ -107,6 +118,38 @@ _SUSPICIOUS_NAME_PATTERNS = (
 )
 
 _EXACT_ID_NAMES = {"id", "index", "row_id", "record_id", "pk", "uuid"}
+
+# Matches camelCase boundaries (e.g. "userId" -> "user", "Id") so that
+# camelCase column names are tokenized the same way as snake_case ones.
+_CAMEL_BOUNDARY_PATTERN = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+
+
+def _tokenize_column_name(name: str) -> list[str]:
+    """Split a column name into lowercase tokens on `_`, spaces, and
+    camelCase boundaries, dropping empty tokens."""
+    normalized = _CAMEL_BOUNDARY_PATTERN.sub("_", name).lower().replace(" ", "_")
+    return [token for token in normalized.split("_") if token]
+
+
+def _pattern_matches_tokens(pattern: str, tokens: list[str]) -> bool:
+    """Check whether a suspicious-name pattern matches whole tokens.
+
+    `pattern` is one of the entries in `_SUSPICIOUS_NAME_PATTERNS`. Its
+    leading/trailing underscore encodes where the matching token must sit:
+
+    - "foo_" (trailing underscore only): the *first* token must equal "foo".
+    - "_foo" (leading underscore only): the *last* token must equal "foo".
+    - "foo" (no underscore): *any* token must equal "foo".
+    """
+    if not tokens:
+        return False
+    bare = pattern.strip("_")
+    if pattern.startswith("_") and not pattern.endswith("_"):
+        return tokens[-1] == bare
+    if pattern.endswith("_") and not pattern.startswith("_"):
+        return tokens[0] == bare
+    return bare in tokens
+
 
 # Matches a trailing integer offset after a temporal pattern, e.g.
 # "lag_7", "rolling_mean_30" (offset is the *first* trailing integer
@@ -639,6 +682,7 @@ class LeakageDetector:
         """Flag column names that suggest identifiers or future-leaking data."""
         for name in feature_names:
             lower = name.lower().replace(" ", "_")
+            tokens = _tokenize_column_name(name)
 
             if lower in _EXACT_ID_NAMES:
                 warnings[name].append(
@@ -649,7 +693,7 @@ class LeakageDetector:
                 continue
 
             for pattern in _SUSPICIOUS_NAME_PATTERNS:
-                if pattern in lower:
+                if _pattern_matches_tokens(pattern, tokens):
                     if pattern in ("target", "label", "y_", "_y"):
                         warnings[name].append(
                             f"Column name '{name}' contains '{pattern}',"

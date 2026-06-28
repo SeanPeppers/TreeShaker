@@ -124,6 +124,58 @@ def test_exact_id_name_flagged(detector):
     assert len(warnings["id"]) > 0
 
 
+def test_suspicious_name_no_false_positive_on_substring(detector, clean_df):
+    """Regression test: column names that merely *contain* a suspicious
+    substring (e.g. "_y" inside "timestamp_year") must not be flagged --
+    only whole underscore-delimited tokens should match. See the
+    real-data false positive on a bike-sharing dataset's "timestamp_year"
+    column, which is unrelated to the actual target."""
+    df = clean_df.rename(
+        columns={
+            "feature_a": "timestamp_year",
+            "feature_b": "timestamp_month",
+            "feature_c": "year_built",
+        }
+    )
+    shap = np.array([0.3, 0.2, 0.1])
+    warnings = detector.detect(
+        df, "target", ["timestamp_year", "timestamp_month", "year_built"], shap
+    )
+    assert warnings["timestamp_year"] == []
+    assert warnings["timestamp_month"] == []
+    assert warnings["year_built"] == []
+
+
+def test_suspicious_name_target_y_still_flagged(detector, clean_df):
+    """Genuine suspicious names with a whole "_y" / "target" / "label"
+    token must still be flagged after the token-boundary fix."""
+    df = clean_df.rename(columns={"feature_a": "target_y"})
+    shap = np.array([0.3, 0.2, 0.1])
+    warnings = detector.detect(
+        df, "target", ["target_y", "feature_b", "feature_c"], shap
+    )
+    assert len(warnings["target_y"]) > 0
+
+
+def test_suspicious_name_label_y_still_flagged(detector, clean_df):
+    df = clean_df.rename(columns={"feature_a": "label_y"})
+    shap = np.array([0.3, 0.2, 0.1])
+    warnings = detector.detect(
+        df, "target", ["label_y", "feature_b", "feature_c"], shap
+    )
+    assert len(warnings["label_y"]) > 0
+
+
+def test_suspicious_name_id_column_still_flagged(detector, clean_df):
+    df = clean_df.rename(columns={"feature_a": "id_column"})
+    shap = np.array([0.3, 0.2, 0.1])
+    warnings = detector.detect(
+        df, "target", ["id_column", "feature_b", "feature_c"], shap
+    )
+    assert len(warnings["id_column"]) > 0
+    assert "identifier" in warnings["id_column"][0].lower()
+
+
 def test_returns_all_features(detector, clean_df):
     feature_names = ["feature_a", "feature_b", "feature_c"]
     shap = np.array([0.3, 0.2, 0.1])
