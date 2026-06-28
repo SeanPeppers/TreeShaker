@@ -728,9 +728,24 @@ class LeakageDetector:
 
         When data is split chronologically by time_column, look-ahead leakage
         occurs when a feature in train or val contains information from the
-        future (from test rows). This method checks if features show
-        significant correlation jumps across temporal split boundaries,
-        which would suggest future information leaked into earlier splits.
+        future (from test rows). This method runs two complementary checks:
+
+        1. Flags features whose distribution shifts sharply and
+           systematically across the train/val/test split (measured via
+           eta-squared, the fraction of the feature's variance explained
+           by split membership). This catches features derived directly
+           from the time column used to create the split -- e.g. a "year"
+           or "month" column extracted from a timestamp -- since such
+           features take on systematically different values in each split
+           by construction. A plain Pearson correlation with the time
+           column would miss cyclical fields like "month" or "day"; using
+           split-membership variance instead detects any feature (linear
+           or cyclical) whose value distribution differs meaningfully
+           between train, val, and test.
+        2. Flags features whose mean shows a large jump from train to val
+           but then unexpectedly stabilizes from val to test, which would
+           suggest val was already "aware" of test (future information
+           leaked into val).
 
         Args:
             train_df: Training set DataFrame.
@@ -774,9 +789,18 @@ class LeakageDetector:
 
         # Check for temporal overlap that would indicate look-ahead leakage
         # (train or val should not have values later than test start).
-        # In a proper chronological split, this shouldn't happen, but we handle
-        # it gracefully if it does.
-        _ = (val_time_range, test_time_range)  # Unused in current check
+        # In a proper chronological split, this shouldn't happen, but we
+        # still need to confirm it before trusting the time column as a
+        # genuine split-boundary signal below.
+        val_start, val_end = val_time_range
+        test_start, test_end = test_time_range
+        is_chronological_split = (
+            pd.notna(val_start)
+            and pd.notna(val_end)
+            and pd.notna(test_start)
+            and pd.notna(test_end)
+            and val_end <= test_start
+        )
 
         # For each numeric feature, check if there's a sharp change at split
         # boundaries that might indicate look-ahead
@@ -786,6 +810,56 @@ class LeakageDetector:
             col = combined[name]
             if not pd.api.types.is_numeric_dtype(col):
                 continue
+
+            # A feature whose value distribution differs systematically
+            # between train, val, and test -- measured by eta-squared, the
+            # fraction of total variance explained by split membership --
+            # is, by construction, encoding which side of the split
+            # boundary a row falls on. This is the textbook look-ahead
+            # leakage case for features derived directly from the time
+            # column (e.g. "year"/"month" extracted from a timestamp):
+            # that boundary information is not legitimately available at
+            # prediction time. Using eta-squared (rather than a plain
+            # correlation with the time column) also catches cyclical
+            # time-derived fields whose raw values are not monotonic in
+            # time but still differ in distribution across splits.
+            if name != time_column and is_chronological_split:
+                try:
+                    train_vals = train_df[name].dropna()
+                    val_vals = val_df[name].dropna()
+                    test_vals = test_df[name].dropna()
+                    groups = [train_vals, val_vals, test_vals]
+                    if all(len(g) > 0 for g in groups) and any(
+                        g.nunique() > 1 for g in groups
+                    ):
+                        all_vals = pd.concat(groups)
+                        grand_mean = all_vals.mean()
+                        ss_total = float(((all_vals - grand_mean) ** 2).sum())
+                        if ss_total > 0:
+                            ss_between = float(
+                                sum(
+                                    len(g) * (g.mean() - grand_mean) ** 2
+                                    for g in groups
+                                )
+                            )
+                            eta_squared = ss_between / ss_total
+                            if eta_squared >= 0.35:
+                                warnings[name].append(
+                                    f"Look-ahead leakage warning: '{name}'"
+                                    f" distribution differs sharply across"
+                                    f" the train/val/test split (eta-squared"
+                                    f" {eta_squared:.2f} of its variance is"
+                                    f" explained by split membership)."
+                                    f" Features derived directly from the"
+                                    f" time column used to create the"
+                                    f" chronological split (e.g. year or"
+                                    f" month extracted from a timestamp)"
+                                    f" encode the split boundary itself,"
+                                    f" which is not legitimately available"
+                                    f" information at prediction time."
+                                )
+                except (TypeError, ValueError):
+                    pass
 
             # Check if feature values in later splits are unusually predictable
             # from earlier split trends (suggesting future information leakage)

@@ -671,3 +671,71 @@ def test_detect_lookahead_leakage_missing_time_column_returns_empty():
     )
     # Should return empty warnings dict (not raise)
     assert len(warnings["feature_a"]) == 0
+
+
+def test_detect_lookahead_leakage_flags_feature_derived_from_time_column():
+    """Regression test for the dead-code bug: a feature literally derived
+    from the time-split key (e.g. a "year" column extracted from the
+    timestamp used for chronological splitting) must be flagged as
+    look-ahead leakage. This is the textbook case the check exists for --
+    on real bike-sharing-demand data, "timestamp_year"/"_month"/"_day"
+    features previously got zero warnings because the time-range values
+    were computed and then discarded instead of being used.
+    """
+    rng = np.random.default_rng(42)
+    n = 300
+
+    # time_col strictly increasing -> a genuine chronological split.
+    time_col = np.arange(n)
+    # A feature derived directly from the time column (e.g. "month"
+    # extracted from a timestamp): a monotonically-increasing cyclical
+    # function of time_col, just like a real calendar field would be over
+    # a short, non-wrapping date range.
+    derived_feature = (time_col // 30) % 12
+    unrelated_feature = rng.normal(0, 1, n)
+    target = rng.integers(0, 2, n).astype(float)
+
+    train_n = 180
+    val_n = 60
+
+    def _split(arr, start, end):
+        return arr[start:end]
+
+    train_df = pd.DataFrame(
+        {
+            "time": _split(time_col, 0, train_n),
+            "year_derived": _split(derived_feature, 0, train_n),
+            "feature_a": _split(unrelated_feature, 0, train_n),
+            "target": _split(target, 0, train_n),
+        }
+    )
+    val_df = pd.DataFrame(
+        {
+            "time": _split(time_col, train_n, train_n + val_n),
+            "year_derived": _split(derived_feature, train_n, train_n + val_n),
+            "feature_a": _split(unrelated_feature, train_n, train_n + val_n),
+            "target": _split(target, train_n, train_n + val_n),
+        }
+    )
+    test_df = pd.DataFrame(
+        {
+            "time": _split(time_col, train_n + val_n, n),
+            "year_derived": _split(derived_feature, train_n + val_n, n),
+            "feature_a": _split(unrelated_feature, train_n + val_n, n),
+            "target": _split(target, train_n + val_n, n),
+        }
+    )
+
+    detector = LeakageDetector()
+    warnings = detector.detect_lookahead_leakage(
+        train_df, val_df, test_df, "time", ["year_derived", "feature_a"]
+    )
+
+    # The feature derived from the time-split key must be flagged.
+    assert len(warnings["year_derived"]) > 0
+    assert any(
+        "distribution differs sharply across the train/val/test split" in w
+        for w in warnings["year_derived"]
+    )
+    # A genuinely unrelated feature must not be flagged (no false positive).
+    assert len(warnings["feature_a"]) == 0
