@@ -101,6 +101,19 @@ def _make_xgb_model(task: str, params: dict) -> Any:
     return xgb.XGBRegressor(**params)
 
 
+def _ordinal_encode_categoricals(X: pd.DataFrame) -> pd.DataFrame:
+    """Ordinal-encode pandas `category` columns for sklearn estimators.
+
+    sklearn's RFECV and RandomForest reject the categorical dtype XGBoost
+    consumes natively elsewhere in this pipeline; this is a minimal,
+    model-agnostic stand-in just for those calls.
+    """
+    X = X.copy()
+    for col in X.select_dtypes(include="category").columns:
+        X[col] = X[col].cat.codes
+    return X
+
+
 def run_boruta_shap(
     model: Any,
     data: pd.DataFrame,
@@ -177,12 +190,7 @@ def run_rfecv(
     from sklearn.feature_selection import RFECV
     from sklearn.model_selection import KFold, StratifiedKFold
 
-    # sklearn's RFECV validates input via check_array, which rejects the
-    # categorical dtype XGBoost consumes natively elsewhere in this pipeline.
-    # Ordinal-encode categorical columns just for this call.
-    X = data[feature_names].copy()
-    for col in X.select_dtypes(include="category").columns:
-        X[col] = X[col].cat.codes
+    X = _ordinal_encode_categoricals(data[feature_names])
     y = data[target_column]
 
     if task in ("binary", "multiclass"):
@@ -295,11 +303,7 @@ def run_rf_baseline_importance(
     """Fit Random Forest baseline model and return normalized feature importances."""
     from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 
-    # sklearn's RandomForest rejects the categorical dtype XGBoost consumes
-    # natively elsewhere in this pipeline. Ordinal-encode just for this call.
-    X = data[feature_names].copy()
-    for col in X.select_dtypes(include="category").columns:
-        X[col] = X[col].cat.codes
+    X = _ordinal_encode_categoricals(data[feature_names])
     y = data[target_column]
 
     if task in ("binary", "multiclass"):
@@ -466,6 +470,17 @@ class FeatureSelectionPipeline:
         self.severe_class_imbalance: bool = False
         self.suggested_features: list[SyntheticFeatureSuggestion] | None = None
 
+    def _train_val_data(self) -> pd.DataFrame:
+        """Concatenate train and validation splits for final-model fitting.
+
+        Used by every step that should see all non-test data (final model
+        training, bootstrap stability checks, and the opt-in alternative
+        importance backends) without ever touching self.test_data.
+        """
+        if self.train_data is None or self.val_data is None:
+            raise RuntimeError("load_data() must be called first")
+        return pd.concat([self.train_data, self.val_data], ignore_index=True)
+
     def load_data(self) -> None:
         """
         Load the CSV file and split into train, validation, and test sets.
@@ -630,10 +645,7 @@ class FeatureSelectionPipeline:
         Args:
             best_params: Hyperparameter dict returned by tune_hyperparams().
         """
-        if self.train_data is None or self.val_data is None:
-            raise RuntimeError("load_data() must be called before train_model()")
-
-        combined = pd.concat([self.train_data, self.val_data], ignore_index=True)
+        combined = self._train_val_data()
         X = combined[self.feature_names]
         y = combined[self.config.target_column]
 
@@ -671,7 +683,7 @@ class FeatureSelectionPipeline:
             )
 
         bootstrap_cfg = self.config.bootstrap_config
-        combined = pd.concat([self.train_data, self.val_data], ignore_index=True)
+        combined = self._train_val_data()
         n_rows = len(combined)
         sample_size = max(1, int(round(n_rows * bootstrap_cfg.sample_frac)))
 
@@ -870,9 +882,7 @@ class FeatureSelectionPipeline:
                 raise RuntimeError(
                     "load_data() must be called before compute_train_importance"
                 )
-            train_val_data = pd.concat(
-                [self.train_data, self.val_data], ignore_index=True
-            )
+            train_val_data = self._train_val_data()
             shap_importance_train = compute_shap_importance(
                 model=self.model,
                 data=train_val_data,
@@ -1122,9 +1132,7 @@ class FeatureSelectionPipeline:
             )
 
         if self.config.use_rfecv:
-            train_val_data = pd.concat(
-                [self.train_data, self.val_data], ignore_index=True
-            )
+            train_val_data = self._train_val_data()
             result_columns["rfecv_ranking"] = run_rfecv(
                 model=self.model,
                 data=train_val_data,
@@ -1135,9 +1143,7 @@ class FeatureSelectionPipeline:
             )
 
         if self.config.use_lightgbm:
-            train_val_data = pd.concat(
-                [self.train_data, self.val_data], ignore_index=True
-            )
+            train_val_data = self._train_val_data()
             result_columns["lightgbm_importance"] = run_lightgbm_importance(
                 data=train_val_data,
                 target_column=self.config.target_column,
@@ -1156,9 +1162,7 @@ class FeatureSelectionPipeline:
             )
 
         if self.config.use_rf_baseline:
-            train_val_data = pd.concat(
-                [self.train_data, self.val_data], ignore_index=True
-            )
+            train_val_data = self._train_val_data()
             result_columns["rf_importance"] = run_rf_baseline_importance(
                 data=train_val_data,
                 target_column=self.config.target_column,
