@@ -173,6 +173,61 @@ def test_load_csv_returns_three_way_split(tmp_path):
     assert len(train_df) + len(val_df) + len(test_df) == n
 
 
+def test_load_csv_chronological_split_sorts_by_time_column(tmp_path):
+    """Chronological split preserves temporal order when time_column is set."""
+    n = 200
+    # Create data with explicit chronological order (timestamps in reverse)
+    df = pd.DataFrame(
+        {
+            "timestamp": range(n, 0, -1),  # Descending: [200, 199, ..., 1]
+            "feature": np.random.RandomState(42).normal(0, 1, n),
+            "target": [0, 1] * (n // 2),
+        }
+    )
+    csv_path = tmp_path / "data.csv"
+    df.to_csv(csv_path, index=False)
+
+    train_df, val_df, test_df = load_csv(
+        str(csv_path),
+        "target",
+        "binary",
+        test_size=0.2,
+        val_size=0.25,
+        time_column="timestamp",
+    )
+
+    # Chronological split should order by timestamp ascending, so:
+    # - train_df should have smallest timestamps (earliest)
+    # - val_df should have middle timestamps
+    # - test_df should have largest timestamps (latest)
+    assert train_df["timestamp"].max() <= val_df["timestamp"].min()
+    assert val_df["timestamp"].max() <= test_df["timestamp"].min()
+    assert len(train_df) + len(val_df) + len(test_df) == n
+
+
+def test_load_csv_chronological_split_missing_column_raises():
+    """Chronological split raises ValidationError if time_column is missing."""
+    n = 100
+    df = pd.DataFrame(
+        {
+            "feature": range(n),
+            "target": [0, 1] * (n // 2),
+        }
+    )
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        csv_path = f"{tmp_dir}/data.csv"
+        df.to_csv(csv_path, index=False)
+        with pytest.raises(ValidationError, match="not found"):
+            load_csv(
+                csv_path,
+                "target",
+                "binary",
+                time_column="nonexistent",
+            )
+
+
 def test_load_csv_three_way_split_is_disjoint(tmp_path):
     n = 200
     df = pd.DataFrame(

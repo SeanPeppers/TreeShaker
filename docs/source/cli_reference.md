@@ -29,6 +29,7 @@ treeshaker --input <file> --target <column> --task <type> [options]
 |---|---|---|---|
 | `--test-size FRAC` | `0.2` | Fraction of full dataset held out as final test set |
 | `--val-size FRAC` | `0.2` | Fraction of remaining train+val pool used for validation |
+| `--time-column COL` | `None` | Optional column name for chronological train/val/test splitting |
 
 **Example:** `--test-size 0.2 --val-size 0.2` means 80% train+val, 20% test; then 80%*(1-0.2)=64% train, 16% val.
 

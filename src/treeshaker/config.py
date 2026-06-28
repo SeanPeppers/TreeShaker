@@ -189,6 +189,14 @@ class Config:
     suggestion (see synthetic_features.py). Off by default
     (synthetic_config.synthesize_from_interactions=False); when enabled,
     also requires compute_shap_interactions=True."""
+    time_column: str | None = None
+    """Optional column name for chronological train/val/test splitting.
+    When set (not None), the data is sorted by this column ascending and
+    split chronologically rather than randomly, preserving test_size and
+    val_size as proportions. When None (default), splits are random and
+    behavior is unchanged from prior versions. The time_column must exist
+    in the input data and must contain sortable (numeric or datetime)
+    values."""
 
     def __post_init__(self) -> None:
         """Validate configuration values."""

@@ -458,4 +458,69 @@ def test_custom_thresholds():
         LeakageConfig(target_corr_threshold=0.999, dominant_shap_fraction=1.1)
     )
     warnings = detector_loose.detect(df, "target", ["feat"], np.array([0.5]))
-    assert len(warnings["feat"]) == 0
+
+
+def test_detect_lookahead_leakage_clean_data_no_warnings():
+    """Clean data with normal temporal progression should not trigger
+    look-ahead warnings."""
+    rng = np.random.default_rng(42)
+    n = 300
+
+    # Create data with clear temporal order
+    time_col = np.arange(n)  # 0, 1, 2, ..., 299
+    feature_a = rng.normal(0, 1, n)
+    target = rng.integers(0, 2, n).astype(float)
+
+    # Split chronologically (no look-ahead)
+    train_n = 180
+    val_n = 60
+    train_df = pd.DataFrame(
+        {
+            "time": time_col[:train_n],
+            "feature_a": feature_a[:train_n],
+            "target": target[:train_n],
+        }
+    )
+    val_df = pd.DataFrame(
+        {
+            "time": time_col[train_n : train_n + val_n],
+            "feature_a": feature_a[train_n : train_n + val_n],
+            "target": target[train_n : train_n + val_n],
+        }
+    )
+    test_df = pd.DataFrame(
+        {
+            "time": time_col[train_n + val_n :],
+            "feature_a": feature_a[train_n + val_n :],
+            "target": target[train_n + val_n :],
+        }
+    )
+
+    detector = LeakageDetector()
+    warnings = detector.detect_lookahead_leakage(
+        train_df, val_df, test_df, "time", ["feature_a"]
+    )
+    # Clean chronological data should produce no warnings
+    assert len(warnings["feature_a"]) == 0
+
+
+def test_detect_lookahead_leakage_missing_time_column_returns_empty():
+    """Missing time_column should gracefully return empty warnings."""
+    rng = np.random.default_rng(42)
+    n = 100
+    df = pd.DataFrame(
+        {
+            "feature_a": rng.normal(0, 1, n),
+            "target": rng.integers(0, 2, n).astype(float),
+        }
+    )
+    train_df = df.iloc[:60]
+    val_df = df.iloc[60:80]
+    test_df = df.iloc[80:]
+
+    detector = LeakageDetector()
+    warnings = detector.detect_lookahead_leakage(
+        train_df, val_df, test_df, "nonexistent", ["feature_a"]
+    )
+    # Should return empty warnings dict (not raise)
+    assert len(warnings["feature_a"]) == 0

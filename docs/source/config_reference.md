@@ -20,6 +20,7 @@ All parameters are optional unless noted. These are settable from the Python API
 |---|---|---|---|---|
 | `test_size` | `--test-size` | float | `0.2` | Fraction of full dataset held out as final test set (0, 1) |
 | `val_size` | `--val-size` | float | `0.2` | Fraction of remaining train+val pool used for validation (0, 1) |
+| `time_column` | `--time-column` | str or None | `None` | Optional column name for chronological train/val/test splitting |
 
 **Important:** `test_size + val_size` must be < 1 so training data has positive size.
 

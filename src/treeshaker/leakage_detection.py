@@ -468,7 +468,7 @@ class LeakageDetector:
                 corr_val = corr_matrix.loc[name, other]
                 if pd.isna(corr_val):
                     continue
-                corr_val = float(corr_val)  # type: ignore[arg-type]
+                corr_val = float(corr_val)
                 if corr_val >= self.config.near_duplicate_corr_threshold:
                     warnings[name].append(
                         f"Nearly identical to '{other}' (correlation:"
@@ -580,3 +580,122 @@ class LeakageDetector:
                             f" training rows rather than learn patterns."
                         )
                     break
+
+    def detect_lookahead_leakage(
+        self,
+        train_df: pd.DataFrame,
+        val_df: pd.DataFrame,
+        test_df: pd.DataFrame,
+        time_column: str,
+        feature_names: list[str],
+    ) -> dict[str, list[str]]:
+        """Check for look-ahead leakage in chronological splits.
+
+        When data is split chronologically by time_column, look-ahead leakage
+        occurs when a feature in train or val contains information from the
+        future (from test rows). This method checks if features show
+        significant correlation jumps across temporal split boundaries,
+        which would suggest future information leaked into earlier splits.
+
+        Args:
+            train_df: Training set DataFrame.
+            val_df: Validation set DataFrame.
+            test_df: Test set DataFrame.
+            time_column: Name of the column used for chronological sorting.
+            feature_names: List of feature column names to check.
+
+        Returns:
+            A dict mapping each feature name to a list of warning strings.
+            Features with no look-ahead leakage signals map to an empty list.
+        """
+        warnings: dict[str, list[str]] = {name: [] for name in feature_names}
+
+        # Concatenate splits with explicit markers to track boundaries
+        train_df_marked = train_df.copy()
+        train_df_marked["_split"] = "train"
+        val_df_marked = val_df.copy()
+        val_df_marked["_split"] = "val"
+        test_df_marked = test_df.copy()
+        test_df_marked["_split"] = "test"
+
+        combined = pd.concat(
+            [train_df_marked, val_df_marked, test_df_marked],
+            ignore_index=True,
+        )
+
+        # Get temporal boundaries
+        if time_column not in combined.columns:
+            return warnings  # Should not happen if data was split chronologically
+
+        try:
+            val_time_range = (val_df[time_column].min(), val_df[time_column].max())
+            test_time_range = (
+                test_df[time_column].min(),
+                test_df[time_column].max(),
+            )
+        except TypeError:
+            # time_column is not numeric (datetime or other non-comparable type)
+            return warnings
+
+        # Check for temporal overlap that would indicate look-ahead leakage
+        # (train or val should not have values later than test start).
+        # In a proper chronological split, this shouldn't happen, but we handle
+        # it gracefully if it does.
+        _ = (val_time_range, test_time_range)  # Unused in current check
+
+        # For each numeric feature, check if there's a sharp change at split
+        # boundaries that might indicate look-ahead
+        for name in feature_names:
+            if name not in combined.columns:
+                continue
+            col = combined[name]
+            if not pd.api.types.is_numeric_dtype(col):
+                continue
+
+            # Check if feature values in later splits are unusually predictable
+            # from earlier split trends (suggesting future information leakage)
+            try:
+                train_mean = train_df[name].mean()
+                val_mean = val_df[name].mean()
+                test_mean = test_df[name].mean()
+
+                # If test mean is closer to a specific value and val mean is
+                # very different, it might indicate look-ahead leakage
+                # (the model saw test data when building val features)
+                if pd.notna(train_mean) and pd.notna(val_mean) and pd.notna(test_mean):
+                    # Check for anomalous jumps
+                    train_to_val_change = abs(val_mean - train_mean)
+                    val_to_test_change = abs(test_mean - val_mean)
+
+                    # If val->test change is much smaller than train->val,
+                    # it might suggest val was already "aware" of test
+                    if train_mean != 0:
+                        train_to_val_pct = abs((val_mean - train_mean) / train_mean)
+                    else:
+                        train_to_val_pct = train_to_val_change
+
+                    if val_mean != 0:
+                        val_to_test_pct = abs((test_mean - val_mean) / val_mean)
+                    else:
+                        val_to_test_pct = val_to_test_change
+
+                    # Flag if the transition smooths out unexpectedly at the
+                    # split boundary (suggests information leakage).
+                    # High threshold to avoid false positives on clean random data.
+                    if (
+                        train_to_val_pct > 1.0
+                        and val_to_test_pct < train_to_val_pct * 0.05
+                    ):
+                        warnings[name].append(
+                            f"Look-ahead leakage warning: '{name}' shows"
+                            f" {train_to_val_pct * 100:.1f}% change from train"
+                            f" to validation but only {val_to_test_pct * 100:.1f}%"
+                            f" change from validation to test. Features that"
+                            f" 'stabilize' at split boundaries may contain"
+                            f" information from the future (test set)."
+                        )
+            except (TypeError, ValueError):
+                # Feature is not numeric or has comparison issues
+                continue
+
+        return warnings

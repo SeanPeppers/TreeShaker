@@ -216,6 +216,16 @@ def parse_arguments() -> argparse.Namespace:
         help="Random seed for reproducibility. (default: 42)",
     )
     parser.add_argument(
+        "--time-column",
+        default=None,
+        help="Optional column name for chronological train/val/test splitting."
+        " When set, data is sorted by this column (ascending) and split"
+        " chronologically rather than randomly, preserving test_size and"
+        " val_size as proportions. The column must exist in the input data"
+        " and contain sortable values (numeric or datetime). (default: None,"
+        " meaning random splits)",
+    )
+    parser.add_argument(
         "--n-permutations",
         type=int,
         default=5,
@@ -326,6 +336,7 @@ def main() -> int:
                 interaction_top_n=args.synthesis_top_n,
                 mi_threshold=args.synthesis_mi_threshold,
             ),
+            time_column=args.time_column,
         )
     except ConfigError as exc:
         logger.error(f"Configuration error: {exc}")

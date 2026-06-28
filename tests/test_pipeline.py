@@ -613,3 +613,45 @@ def test_pipeline_balanced_dataset_unaffected_by_imbalance_logic(binary_csv, tmp
     pipeline = FeatureSelectionPipeline(config)
     pipeline.run()
     assert pipeline.severe_class_imbalance is False
+
+
+def test_pipeline_chronological_split_preserves_order(binary_data, tmp_path):
+    """When time_column is set, splits should respect chronological order."""
+    # Add a time column to the test data
+    binary_data["time"] = range(len(binary_data))
+    csv_path = tmp_path / "data.csv"
+    binary_data.to_csv(csv_path, index=False)
+
+    config = make_fast_config(
+        str(csv_path),
+        "binary",
+        tmp_path,
+        time_column="time",
+    )
+    pipeline = FeatureSelectionPipeline(config)
+    pipeline.load_data()
+
+    # Verify chronological order: train < val < test
+    assert pipeline.train_data["time"].max() <= pipeline.val_data["time"].min()
+    assert pipeline.val_data["time"].max() <= pipeline.test_data["time"].min()
+
+
+def test_pipeline_chronological_split_runs_successfully(binary_data, tmp_path):
+    """Full pipeline run with time_column should complete without error."""
+    # Add a time column
+    binary_data["time"] = range(len(binary_data))
+    csv_path = tmp_path / "data.csv"
+    binary_data.to_csv(csv_path, index=False)
+
+    config = make_fast_config(
+        str(csv_path),
+        "binary",
+        tmp_path,
+        time_column="time",
+    )
+    pipeline = FeatureSelectionPipeline(config)
+    results = pipeline.run()
+
+    assert isinstance(results, pd.DataFrame)
+    assert "feature_name" in results.columns
+    assert len(results) > 0

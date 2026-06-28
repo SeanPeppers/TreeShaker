@@ -154,6 +154,59 @@ def check_class_imbalance(
     )
 
 
+def _split_chronological(
+    df: pd.DataFrame,
+    time_column: str,
+    test_size: float,
+    val_size: float,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Split data chronologically by a time column (ascending order).
+
+    Sorts by time_column ascending, then splits using the same proportions
+    as random splitting (test_size from the full set, val_size from the
+    remaining train+val pool), but preserving temporal order.
+
+    Args:
+        df: DataFrame to split (must contain time_column).
+        time_column: Column name to sort by (must contain sortable values).
+        test_size: Fraction of the FULL dataset held out as the final test set.
+        val_size: Fraction of the remaining train+val pool for validation.
+
+    Returns:
+        A tuple of (train_df, val_df, test_df) in chronological order.
+
+    Raises:
+        ValidationError: If time_column is missing or contains non-sortable values.
+    """
+    if time_column not in df.columns:
+        raise ValidationError(
+            f"time_column {time_column!r} not found in data."
+            f" Available columns: {sorted(df.columns)}"
+        )
+
+    # Sort by time ascending
+    try:
+        df_sorted = df.sort_values(by=time_column).reset_index(drop=True)
+    except TypeError as exc:
+        raise ValidationError(
+            f"time_column {time_column!r} contains non-sortable values: {exc}"
+        ) from exc
+
+    n = len(df_sorted)
+    test_count = int(np.round(n * test_size))
+    # val_size is a fraction of the train+val pool (after removing test)
+    train_val_count = n - test_count
+    val_count = int(np.round(train_val_count * val_size))
+
+    # Chronological order: earliest train, then middle val, then latest test
+    test_df = df_sorted.iloc[n - test_count :].reset_index(drop=True)
+    train_val = df_sorted.iloc[: n - test_count]
+    val_df = train_val.iloc[len(train_val) - val_count :].reset_index(drop=True)
+    train_df = train_val.iloc[: len(train_val) - val_count].reset_index(drop=True)
+
+    return train_df, val_df, test_df
+
+
 def load_csv(
     filepath: str,
     target_column: str,
@@ -161,6 +214,7 @@ def load_csv(
     test_size: float = 0.2,
     val_size: float = 0.2,
     random_seed: int = 42,
+    time_column: str | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Load a CSV file and split it into train, validation, and test sets.
 
@@ -169,6 +223,9 @@ def load_csv(
     the final, never-fit-on test set; then val_size (a fraction of the
     *remaining* train+val pool) is held out from what's left as the
     validation set used for Optuna trial evaluation / early stopping.
+
+    When time_column is set, the split is chronological (sorted ascending by
+    time_column) rather than random, preserving the same proportions.
 
     Args:
         filepath: Path to the input CSV file.
@@ -179,7 +236,11 @@ def load_csv(
         val_size: Fraction of the remaining train+val pool (i.e. after
             test_size is removed) used for validation during hyperparameter
             tuning.
-        random_seed: Random seed for reproducible splits.
+        random_seed: Random seed for reproducible splits (ignored if
+            time_column is set).
+        time_column: Optional column name for chronological splitting. When
+            set, data is sorted by this column and split chronologically
+            rather than randomly. When None (default), splits are random.
 
     Returns:
         A tuple of (train_df, val_df, test_df), all including the target
@@ -189,7 +250,8 @@ def load_csv(
         ValidationError: If the input file is missing, empty, unreadable as
             CSV, the target column is missing or incompatible with the task,
             the target column has no non-null values, or there are too few
-            rows to perform a stratified split.
+            rows to perform a stratified split. If time_column is set and
+            the column is missing or contains non-sortable values.
     """
     logger = logging.getLogger(__name__)
     logger.info(f"Loading data from {filepath}")
@@ -214,41 +276,50 @@ def load_csv(
             f"Target column {target_column!r} has no non-null values —"
             " nothing to train on."
         )
-    stratify = df[target_column] if task in ("binary", "multiclass") else None
-    try:
-        train_val_df, test_df = train_test_split(
-            df,
-            test_size=test_size,
-            random_state=random_seed,
-            stratify=stratify,
-        )
-    except ValueError as exc:
-        if stratify is not None:
-            raise ValidationError(
-                "Not enough data to perform a stratified train/test"
-                f" split with test_size={test_size}: {exc} Try providing"
-                " more data or adjusting --test-size."
-            ) from exc
-        raise
 
-    stratify_train_val = (
-        train_val_df[target_column] if task in ("binary", "multiclass") else None
-    )
-    try:
-        train_df, val_df = train_test_split(
-            train_val_df,
-            test_size=val_size,
-            random_state=random_seed,
-            stratify=stratify_train_val,
+    if time_column is not None:
+        # Chronological split
+        logger.info(f"Using chronological split by {time_column!r}")
+        train_df, val_df, test_df = _split_chronological(
+            df, time_column, test_size, val_size
         )
-    except ValueError as exc:
-        if stratify_train_val is not None:
-            raise ValidationError(
-                "Not enough data to perform a stratified train/validation"
-                f" split with val_size={val_size}: {exc} Try providing"
-                " more data or adjusting --val-size."
-            ) from exc
-        raise
+    else:
+        # Random split (existing behavior)
+        stratify = df[target_column] if task in ("binary", "multiclass") else None
+        try:
+            train_val_df, test_df = train_test_split(
+                df,
+                test_size=test_size,
+                random_state=random_seed,
+                stratify=stratify,
+            )
+        except ValueError as exc:
+            if stratify is not None:
+                raise ValidationError(
+                    "Not enough data to perform a stratified train/test"
+                    f" split with test_size={test_size}: {exc} Try providing"
+                    " more data or adjusting --test-size."
+                ) from exc
+            raise
+
+        stratify_train_val = (
+            train_val_df[target_column] if task in ("binary", "multiclass") else None
+        )
+        try:
+            train_df, val_df = train_test_split(
+                train_val_df,
+                test_size=val_size,
+                random_state=random_seed,
+                stratify=stratify_train_val,
+            )
+        except ValueError as exc:
+            if stratify_train_val is not None:
+                raise ValidationError(
+                    "Not enough data to perform a stratified train/validation"
+                    f" split with val_size={val_size}: {exc} Try providing"
+                    " more data or adjusting --val-size."
+                ) from exc
+            raise
 
     logger.info(
         f"Split: {len(train_df)} train, {len(val_df)} validation, {len(test_df)} test"

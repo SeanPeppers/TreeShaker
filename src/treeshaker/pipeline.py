@@ -226,6 +226,7 @@ class FeatureSelectionPipeline:
             test_size=self.config.test_size,
             val_size=self.config.val_size,
             random_seed=self.config.random_seed,
+            time_column=self.config.time_column,
         )
         feature_names = [
             col for col in self.train_data.columns if col != self.config.target_column
@@ -552,6 +553,19 @@ class FeatureSelectionPipeline:
             feature_names=self.feature_names,
         )
 
+        # Check for look-ahead leakage if chronological split is enabled
+        lookahead_warnings: dict[str, list[str]] = {
+            name: [] for name in self.feature_names
+        }
+        if self.config.time_column is not None:
+            lookahead_warnings = leakage_detector.detect_lookahead_leakage(
+                train_df=self.train_data,
+                val_df=self.val_data,
+                test_df=self.test_data,
+                time_column=self.config.time_column,
+                feature_names=self.feature_names,
+            )
+
         residual_correlation = None
         residual_notes: dict[str, str] = {}
         if self.config.check_residuals:
@@ -579,10 +593,14 @@ class FeatureSelectionPipeline:
             lk_warnings = leakage_warnings[feature]
             residual_note = residual_notes.get(feature, "")
             temporal_note = " ".join(temporal_structure_warnings.get(feature, []))
+            lookahead_note = " ".join(lookahead_warnings.get(feature, []))
 
-            if is_harmful[i] and lk_warnings:
+            lookahead_list = [lookahead_note] if lookahead_note else []
+            combined_warnings = [*lk_warnings, *lookahead_list]
+
+            if is_harmful[i] and combined_warnings:
                 recommendation = "Drop"
-                all_reasons = [harm_reasons[i], *lk_warnings]
+                all_reasons = [harm_reasons[i], *combined_warnings]
                 numbered = " ".join(
                     f"({j}) {r}" for j, r in enumerate(all_reasons, start=1)
                 )
@@ -590,15 +608,15 @@ class FeatureSelectionPipeline:
             elif is_harmful[i]:
                 recommendation = "Drop"
                 reason = harm_reasons[i]
-            elif lk_warnings:
+            elif combined_warnings:
                 recommendation = "Caution"
-                if len(lk_warnings) > 1:
+                if len(combined_warnings) > 1:
                     numbered = " ".join(
-                        f"({j}) {r}" for j, r in enumerate(lk_warnings, start=1)
+                        f"({j}) {r}" for j, r in enumerate(combined_warnings, start=1)
                     )
-                    reason = f"{len(lk_warnings)} issues found — " + numbered
+                    reason = f"{len(combined_warnings)} issues found — " + numbered
                 else:
-                    reason = lk_warnings[0]
+                    reason = combined_warnings[0]
             else:
                 recommendation = "Keep"
                 reason = ""
