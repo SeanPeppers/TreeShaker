@@ -8,11 +8,12 @@ compares approximate vs exact near-duplicate detection results and timing.
 """
 
 import time
+
 import numpy as np
 import pandas as pd
 from sklearn.datasets import fetch_california_housing
 
-from treeshaker.leakage_detection import LeakageDetector, LeakageConfig
+from treeshaker.leakage_detection import LeakageConfig, LeakageDetector
 
 
 def build_wide_dataset(n_features: int = 300, n_duplicates: int = 50) -> pd.DataFrame:
@@ -38,7 +39,11 @@ def build_wide_dataset(n_features: int = 300, n_duplicates: int = 50) -> pd.Data
         base_col = df_base.iloc[:, i % len(df_base.columns)]
         jitter = rng.normal(0, 0.001 * base_col.std(), len(df_base))
         df[f"dup_{i}_a"] = base_col + jitter
-        df[f"dup_{i}_b"] = base_col + jitter * 0.5 + rng.normal(0, 0.0005 * base_col.std(), len(df_base))
+        df[f"dup_{i}_b"] = (
+            base_col
+            + jitter * 0.5
+            + rng.normal(0, 0.0005 * base_col.std(), len(df_base))
+        )
 
     # Add independent random features to reach target count
     target_features = n_features
@@ -108,9 +113,9 @@ def main() -> None:
         recall = len(overlap) / len(flagged_exact)
         print(f"Approximate recall (% of exact found): {recall * 100:.1f}%")
 
-    print(f"\nNote: Approximate LSH may miss some weak-correlation pairs due to")
-    print(f"hash collisions, but should find most high-correlation duplicates.")
-    print(f"\nFull validation:")
+    print("\nNote: Approximate LSH may miss some weak-correlation pairs due to")
+    print("hash collisions, but should find most high-correlation duplicates.")
+    print("\nFull validation:")
     print(f"  Exact path detected {len(flagged_exact)} near-duplicate features")
     print(f"  Approximate path detected {len(flagged_approx)} near-duplicate features")
     print(f"  Speedup: {elapsed_exact / elapsed_approx:.1f}x (approx is faster)")

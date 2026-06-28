@@ -3,6 +3,7 @@
 import logging
 import re
 from dataclasses import dataclass, field
+from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -498,7 +499,7 @@ class LeakageDetector:
                 corr_val = corr_matrix.loc[name, other]
                 if pd.isna(corr_val):
                     continue
-                corr_val = float(corr_val)
+                corr_val = float(cast(float, corr_val))
                 if corr_val >= self.config.near_duplicate_corr_threshold:
                     warnings[name].append(
                         f"Nearly identical to '{other}' (correlation:"

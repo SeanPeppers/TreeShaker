@@ -508,14 +508,19 @@ def test_near_duplicate_approximate_mode_matches_exact():
     on a moderately-sized dataset (if Rust extension is available)."""
     base = np.random.default_rng(42).normal(0, 1, 150)
     rng = np.random.default_rng(99)
-    # Create 10 features: 3 pairs of near-duplicates (high correlation) and 4 independent
+    # Create 10 features: 3 pairs of near-duplicates (high correlation) and 4
+    # independent
     features = {
         "dup_a1": base,
         "dup_a2": base * 0.99999 + rng.normal(0, 0.001, 150),  # Very high correlation
         "dup_b1": rng.normal(5, 2, 150),
-        "dup_b2": rng.normal(5, 2, 150) * 0.99998 + rng.normal(0, 0.002, 150),  # Very high corr
+        "dup_b2": (
+            rng.normal(5, 2, 150) * 0.99998 + rng.normal(0, 0.002, 150)
+        ),  # Very high corr
         "dup_c1": rng.normal(-1, 3, 150),
-        "dup_c2": rng.normal(-1, 3, 150) * 0.99997 + rng.normal(0, 0.003, 150),  # Very high corr
+        "dup_c2": (
+            rng.normal(-1, 3, 150) * 0.99997 + rng.normal(0, 0.003, 150)
+        ),  # Very high corr
         "indep_1": rng.normal(0, 1, 150),
         "indep_2": rng.normal(0, 1, 150),
         "indep_3": rng.normal(0, 1, 150),
