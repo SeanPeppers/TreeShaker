@@ -27,16 +27,9 @@ Order: 1 → 2 → 3 → 4 → 5 as separate PRs (small, fast to review, avoids 
 
 ---
 
-## Wave 1 — Detection/scoring additions (low conflict risk, extend existing dataclass pattern)
+## Wave 1 — Detection/scoring additions (SHIPPED)
 
-| # | Feature | Notes |
-|---|---|---|
-| 1 | VIF multicollinearity detection | Extends leakage checks beyond pairwise corr — catches multi-feature redundancy clusters |
-| 2 | SHAP interaction values | New output: pairwise feature interaction strengths |
-| 3 | Mutual information scoring | Catches non-tree-friendly / categorical dependency signal SHAP+perm miss |
-| 4 | Bootstrap ensemble importance | Mean/std of SHAP+perm importance across resampled fits — quantifies ranking stability |
-| 5 | Class imbalance detection/warning | Flags extreme class ratios that break permutation-importance assumptions |
-| 6 | Feature groups / hierarchical tags | Tag features (e.g. `price_*`) to aggregate importance at group level |
+Wave 1 (VIF multicollinearity, SHAP interaction values, mutual information scoring, bootstrap ensemble importance, class imbalance detection, feature groups) — shipped, see CHANGELOG/git history.
 
 ## Wave 2 — Alternative algorithms (behind flags, bigger pipeline touch)
 
