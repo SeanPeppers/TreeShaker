@@ -91,6 +91,7 @@ See [BootstrapConfig](#bootstrapconfig) below.
 | `use_boruta` | `--use-boruta` | bool | `False` | Run Boruta feature selection and output `boruta_decision` |
 | `use_rfecv` | `--use-rfecv` | bool | `False` | Run sklearn RFECV feature selection and output `rfecv_ranking` |
 | `use_lightgbm` | `--use-lightgbm` | bool | `False` | Compute LightGBM feature importances as `lightgbm_importance` |
+| `use_catboost` | `--use-catboost` | bool | `False` | Compute CatBoost feature importances as `catboost_importance` |
 
 
 See [ResidualConfig](#residualconfig) below.

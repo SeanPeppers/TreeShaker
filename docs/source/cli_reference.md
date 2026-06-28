@@ -109,6 +109,7 @@ treeshaker --input <file> --target <column> --task <type> [options]
 | `--use-boruta` | off | Run Boruta feature selection and add `boruta_decision` column |
 | `--use-rfecv` | off | Run sklearn RFECV feature selection and add `rfecv_ranking` column |
 | `--use-lightgbm` | off | Compute LightGBM feature importances as `lightgbm_importance` column |
+| `--use-catboost` | off | Compute CatBoost feature importances as `catboost_importance` column |
 
 
 ## Feature synthesis (opt-in)

@@ -48,6 +48,9 @@ boruta = []
 lightgbm = [
     "lightgbm>=4.0.0",
 ]
+catboost = [
+    "catboost>=1.2.0",
+]
 docs = [
 
     "sphinx>=7.0.0",

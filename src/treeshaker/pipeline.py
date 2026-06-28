@@ -231,6 +231,56 @@ def run_lightgbm_importance(
     return [float(i) for i in importances]
 
 
+def run_catboost_importance(
+    data: pd.DataFrame,
+    target_column: str,
+    feature_names: list[str],
+    task: str,
+    random_seed: int = 42,
+) -> list[float]:
+    """Fit CatBoost model with native categorical handling and return importances."""
+    try:
+        import catboost as cb
+    except ImportError:
+        raise ImportError(
+            "The 'catboost' package is required when use_catboost=True."
+            " Install it with: pip install catboost"
+        )
+
+    X = data[feature_names].copy()
+    y = data[target_column]
+
+    cat_features = [
+        col
+        for col in feature_names
+        if isinstance(X[col].dtype, pd.CategoricalDtype)
+        or pd.api.types.is_object_dtype(X[col])
+        or pd.api.types.is_string_dtype(X[col])
+    ]
+    for col in cat_features:
+        X[col] = X[col].astype(str).fillna("nan")
+
+    if task in ("binary", "multiclass"):
+        model = cb.CatBoostClassifier(
+            random_seed=random_seed,
+            verbose=0,
+            cat_features=(cat_features if cat_features else None),
+        )
+    else:
+        model = cb.CatBoostRegressor(
+            random_seed=random_seed,
+            verbose=0,
+            cat_features=(cat_features if cat_features else None),
+        )
+
+    model.fit(X, y)
+    importances = model.get_feature_importance()
+    total = float(sum(importances))
+    if total > 0:
+        return [float(i / total) for i in importances]
+    return [float(i) for i in importances]
+
+
 def derive_prefix_groups(feature_names: list[str]) -> dict[str, list[str]]:
     """Auto-derive feature groups from a common prefix before the last underscore.
 
@@ -989,6 +1039,15 @@ class FeatureSelectionPipeline:
             )
             result_columns["lightgbm_importance"] = run_lightgbm_importance(
                 data=train_val_data,
+                target_column=self.config.target_column,
+                feature_names=self.feature_names,
+                task=self.config.task,
+                random_seed=self.config.random_seed,
+            )
+
+        if self.config.use_catboost:
+            result_columns["catboost_importance"] = run_catboost_importance(
+                data=self.test_data,
                 target_column=self.config.target_column,
                 feature_names=self.feature_names,
                 task=self.config.task,

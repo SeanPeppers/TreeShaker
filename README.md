@@ -18,6 +18,7 @@ Most feature-importance tools give you a single number per feature from a single
 - **Boruta feature selection** — opt-in feature selection with `--use-boruta` (`use_boruta=True`), adding a `boruta_decision` column (`Confirmed`, `Tentative`, or `Rejected`).
 - **RFECV feature selection** — opt-in feature elimination with `--use-rfecv` (`use_rfecv=True`), adding an `rfecv_ranking` column (1 = selected feature rank).
 - **LightGBM importance cross-validation** — opt-in model swap with `--use-lightgbm` (`use_lightgbm=True`), adding a `lightgbm_importance` column.
+- **CatBoost importance backend** — opt-in model evaluation with native categorical handling using `--use-catboost` (`use_catboost=True`), adding a `catboost_importance` column.
 
 ## Quick start
 

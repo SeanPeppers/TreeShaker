@@ -265,6 +265,10 @@ class Config:
     """If True, compute LightGBM model feature importances as lightgbm_importance
     column to cross-validate against XGBoost. Off by default."""
 
+    use_catboost: bool = False
+    """If True, compute CatBoost model feature importances as catboost_importance
+    column with native categorical handling. Off by default."""
+
     def __post_init__(self) -> None:
         """Validate configuration values."""
         valid_tasks = {"binary", "multiclass", "regression"}

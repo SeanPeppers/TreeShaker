@@ -335,6 +335,11 @@ def parse_arguments() -> argparse.Namespace:
         help="Compute LightGBM model feature importances as"
         " lightgbm_importance column.",
     )
+    parser.add_argument(
+        "--use-catboost",
+        action="store_true",
+        help="Compute CatBoost feature importances as catboost_importance column.",
+    )
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging.")
     return parser.parse_args()
 
@@ -422,6 +427,7 @@ def main() -> int:
             use_boruta=args.use_boruta,
             use_rfecv=args.use_rfecv,
             use_lightgbm=args.use_lightgbm,
+            use_catboost=args.use_catboost,
         )
 
     except ConfigError as exc:
