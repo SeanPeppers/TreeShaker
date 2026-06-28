@@ -213,6 +213,8 @@ def load_csv(
     val_size: float = 0.2,
     random_seed: int = 42,
     time_column: str | None = None,
+    large_dataset_sample_threshold: int | None = None,
+    large_dataset_sample_frac: float = 0.5,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Load a CSV file and split it into train, validation, and test sets.
 
@@ -239,6 +241,8 @@ def load_csv(
         time_column: Optional column name for chronological splitting. When
             set, data is sorted by this column and split chronologically
             rather than randomly. When None (default), splits are random.
+        large_dataset_sample_threshold: Optional row count threshold for sampling.
+        large_dataset_sample_frac: Fraction of rows to sample if threshold exceeded.
 
     Returns:
         A tuple of (train_df, val_df, test_df), all including the target
@@ -274,6 +278,34 @@ def load_csv(
             f"Target column {target_column!r} has no non-null values —"
             " nothing to train on."
         )
+
+    if (
+        large_dataset_sample_threshold is not None
+        and len(df) > large_dataset_sample_threshold
+    ):
+        logger.info(
+            f"Input row count ({len(df)}) exceeds threshold"
+            f" ({large_dataset_sample_threshold}); applying auto-stratified sampling"
+            f" with fraction {large_dataset_sample_frac}"
+        )
+        stratify_sample = (
+            df[target_column] if task in ("binary", "multiclass") else None
+        )
+        try:
+            df, _ = train_test_split(
+                df,
+                train_size=large_dataset_sample_frac,
+                random_state=random_seed,
+                stratify=stratify_sample,
+            )
+            df = df.reset_index(drop=True)
+        except ValueError as exc:
+            if stratify_sample is not None:
+                raise ValidationError(
+                    "Not enough data to perform stratified large-dataset sampling: "
+                    f"{exc}"
+                ) from exc
+            raise
 
     if time_column is not None:
         # Chronological split

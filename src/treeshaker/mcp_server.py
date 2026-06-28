@@ -70,6 +70,8 @@ def _build_config(
     use_sklearn_permutation_importance: bool = False,
     use_gpu: bool = False,
     use_optuna_pruning: bool = False,
+    large_dataset_sample_threshold: int | None = None,
+    large_dataset_sample_frac: float = 0.5,
     config_overrides: dict | None = None,
 ) -> Config:
     """Build a Config from run_pipeline's explicit kwargs plus generic overrides.
@@ -119,6 +121,8 @@ def _build_config(
         "use_sklearn_permutation_importance": use_sklearn_permutation_importance,
         "use_gpu": use_gpu,
         "use_optuna_pruning": use_optuna_pruning,
+        "large_dataset_sample_threshold": large_dataset_sample_threshold,
+        "large_dataset_sample_frac": large_dataset_sample_frac,
     }
 
     if config_overrides:
@@ -160,6 +164,8 @@ def run_pipeline(
     use_sklearn_permutation_importance: bool = False,
     use_gpu: bool = False,
     use_optuna_pruning: bool = False,
+    large_dataset_sample_threshold: int | None = None,
+    large_dataset_sample_frac: float = 0.5,
     config_overrides: dict | None = None,
 ) -> dict:
     """Run the full TreeShaker feature selection pipeline end to end.
@@ -195,6 +201,8 @@ def run_pipeline(
             importance on the existing trained model (opt-in).
         use_gpu: Enable GPU acceleration for XGBoost (opt-in).
         use_optuna_pruning: Enable Optuna trial pruning and early stopping (opt-in).
+        large_dataset_sample_threshold: Optional row count threshold for sampling.
+        large_dataset_sample_frac: Fraction of rows to sample if threshold exceeded.
         config_overrides: Optional dict of additional Config field overrides
             (e.g. {"shap_importance_threshold": 0.02}) for anything not
             covered by the explicit kwargs above.
@@ -233,6 +241,8 @@ def run_pipeline(
             use_sklearn_permutation_importance=use_sklearn_permutation_importance,
             use_gpu=use_gpu,
             use_optuna_pruning=use_optuna_pruning,
+            large_dataset_sample_threshold=large_dataset_sample_threshold,
+            large_dataset_sample_frac=large_dataset_sample_frac,
             config_overrides=config_overrides,
         )
 

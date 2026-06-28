@@ -286,6 +286,15 @@ class Config:
     """If True, enable Optuna trial pruning and early stopping during hyperparameter
     tuning to skip plateauing trials. Off by default."""
 
+    large_dataset_sample_threshold: int | None = None
+    """Optional row count threshold for large-dataset sampling. When set and
+    input row count exceeds this threshold, auto-stratified sampling is applied
+    before train/val/test split. None (default) disables sampling."""
+
+    large_dataset_sample_frac: float = 0.5
+    """Fraction of rows to sample when large_dataset_sample_threshold is exceeded.
+    Default 0.5 (50%). Must be in (0, 1]."""
+
     def __post_init__(self) -> None:
         """Validate configuration values."""
         if self.use_gpu and not detect_cuda_available():
@@ -296,6 +305,17 @@ class Config:
         valid_tasks = {"binary", "multiclass", "regression"}
         if self.task not in valid_tasks:
             raise ConfigError(f"task must be one of {valid_tasks}, got {self.task!r}")
+        if self.large_dataset_sample_threshold is not None:
+            _require_at_least(
+                "large_dataset_sample_threshold",
+                self.large_dataset_sample_threshold,
+                1,
+            )
+        if not 0 < self.large_dataset_sample_frac <= 1.0:
+            raise ConfigError(
+                "large_dataset_sample_frac must be in (0, 1], got"
+                f" {self.large_dataset_sample_frac}"
+            )
         valid_screenings = {"exact", "approximate"}
         if self.leakage_screening not in valid_screenings:
             raise ConfigError(

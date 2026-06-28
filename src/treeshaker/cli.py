@@ -364,6 +364,20 @@ def parse_arguments() -> argparse.Namespace:
         help="Enable Optuna trial pruning and early stopping during"
         " hyperparameter tuning.",
     )
+    parser.add_argument(
+        "--large-dataset-sample-threshold",
+        type=int,
+        default=None,
+        help="Row count threshold above which auto-stratified sampling is"
+        " applied before train/val/test splitting. (default: None)",
+    )
+    parser.add_argument(
+        "--large-dataset-sample-frac",
+        type=float,
+        default=0.5,
+        help="Fraction of rows to sample when row count exceeds threshold."
+        " (default: 0.5)",
+    )
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging.")
     return parser.parse_args()
 
@@ -458,6 +472,8 @@ def main() -> int:
             ),
             use_gpu=args.use_gpu,
             use_optuna_pruning=args.use_optuna_pruning,
+            large_dataset_sample_threshold=args.large_dataset_sample_threshold,
+            large_dataset_sample_frac=args.large_dataset_sample_frac,
         )
 
     except ConfigError as exc:
