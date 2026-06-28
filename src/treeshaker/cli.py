@@ -259,6 +259,26 @@ def parse_arguments() -> argparse.Namespace:
         " over the full feature set. Unset (default) uses all rows,"
         " matching prior behavior.",
     )
+    parser.add_argument(
+        "--compute-train-importance",
+        action="store_true",
+        help="Compute SHAP importance on the combined train+val dataset in"
+        " addition to the held-out test set (diagnostic only, does not affect"
+        " feature selection). Enables detection of large train-vs-test"
+        " importance gaps, a signal for potential overfit/leakage. Off by"
+        " default.",
+    )
+    parser.add_argument(
+        "--train-test-delta-threshold",
+        type=float,
+        default=None,
+        help="When --compute-train-importance is set, optionally flag features"
+        " whose train-vs-test SHAP importance delta (relative to test"
+        " importance) exceeds this threshold. The delta is computed as"
+        " abs(train - test) / test, guarding against division by zero. None"
+        " (default) reports deltas informationally without flagging. Must be"
+        " >= 0 if set.",
+    )
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging.")
     return parser.parse_args()
 
@@ -336,6 +356,8 @@ def main() -> int:
                 interaction_top_n=args.synthesis_top_n,
                 mi_threshold=args.synthesis_mi_threshold,
             ),
+            compute_train_importance=args.compute_train_importance,
+            train_test_importance_delta_threshold=args.train_test_delta_threshold,
             time_column=args.time_column,
         )
     except ConfigError as exc:

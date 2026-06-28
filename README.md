@@ -65,6 +65,7 @@ cd TreeShaker
 pip install -e ".[dev]"
 
 # Lint, format, type-check, test
+
 ruff check src/ tests/ demo/
 ruff format src/ tests/ demo/
 mypy

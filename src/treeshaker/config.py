@@ -189,6 +189,23 @@ class Config:
     suggestion (see synthetic_features.py). Off by default
     (synthetic_config.synthesize_from_interactions=False); when enabled,
     also requires compute_shap_interactions=True."""
+    compute_train_importance: bool = False
+    """If True, compute SHAP importance on the combined train+val dataset
+    in addition to the held-out test set, enabling detection of large
+    train-vs-test SHAP gaps (a diagnostic signal for overfit/leakage).
+    Off by default; when enabled, optionally paired with
+    train_test_importance_delta_threshold to flag gaps exceeding a
+    specified threshold. The test-only evaluation remains the authoritative
+    importance signal for feature selection — this diagnostic does not
+    change the recommendation logic."""
+    train_test_importance_delta_threshold: float | None = None
+    """When compute_train_importance is True, flag features whose
+    train-vs-test SHAP importance delta (relative to test importance)
+    exceeds this threshold. The delta is computed as
+    abs(train_importance - test_importance) / test_importance, guarding
+    against division by zero following the same convention as WAPE.
+    None (default) disables the threshold check and reports deltas
+    informationally only. Must be >= 0 if set."""
     time_column: str | None = None
     """Optional column name for chronological train/val/test splitting.
     When set (not None), the data is sorted by this column ascending and
@@ -243,6 +260,12 @@ class Config:
             self.synthetic_config.interaction_top_n,
             1,
         )
+        if self.train_test_importance_delta_threshold is not None:
+            _require_at_least(
+                "train_test_importance_delta_threshold",
+                self.train_test_importance_delta_threshold,
+                0,
+            )
         if (
             self.permutation_metric is not None
             and self.permutation_metric not in VALID_PERMUTATION_METRICS

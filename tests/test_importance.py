@@ -11,6 +11,7 @@ from treeshaker.importance import (
     compute_mutual_information,
     compute_permutation_importance,
     compute_shap_importance,
+    compute_shap_importance_delta,
     compute_shap_interactions,
 )
 from treeshaker.utils import get_metric_fn
@@ -426,3 +427,58 @@ def test_mutual_information_informative_features_higher(fitted_regression_model)
         df, "target", feature_names, task="regression", random_seed=42
     )
     assert (scores > 0).any()
+
+
+def test_shap_importance_delta_shape():
+    """compute_shap_importance_delta returns correct shape."""
+    train = np.array([0.1, 0.2, 0.3, 0.4])
+    test = np.array([0.15, 0.25, 0.35, 0.45])
+    delta = compute_shap_importance_delta(train, test)
+    assert delta.shape == train.shape
+
+
+def test_shap_importance_delta_non_negative():
+    """compute_shap_importance_delta returns non-negative values."""
+    train = np.array([0.1, 0.2, 0.3, 0.4])
+    test = np.array([0.15, 0.25, 0.35, 0.45])
+    delta = compute_shap_importance_delta(train, test)
+    assert (delta >= 0).all()
+
+
+def test_shap_importance_delta_zero_when_equal():
+    """Delta is 0 when train and test importance are equal."""
+    importance = np.array([0.1, 0.2, 0.3, 0.4])
+    delta = compute_shap_importance_delta(importance, importance)
+    np.testing.assert_array_almost_equal(delta, np.zeros(4))
+
+
+def test_shap_importance_delta_handles_zero_test_importance():
+    """Division by zero (zero test importance) returns 0."""
+    train = np.array([0.1, 0.0, 0.3, 0.4])
+    test = np.array([0.0, 0.2, 0.35, 0.45])
+    delta = compute_shap_importance_delta(train, test)
+    # When test importance is 0, delta should be 0 (no blame on train difference)
+    assert delta[0] == 0.0
+    assert delta[1] > 0  # Normal case
+    assert delta[2] > 0  # Normal case
+    assert delta[3] > 0  # Normal case
+
+
+def test_shap_importance_delta_known_values():
+    """Delta computation matches expected formula: abs(train - test) / test."""
+    train = np.array([0.1, 0.3, 0.5])
+    test = np.array([0.2, 0.2, 0.5])
+    delta = compute_shap_importance_delta(train, test)
+    # Feature 0: |0.1 - 0.2| / 0.2 = 0.1 / 0.2 = 0.5
+    # Feature 1: |0.3 - 0.2| / 0.2 = 0.1 / 0.2 = 0.5
+    # Feature 2: |0.5 - 0.5| / 0.5 = 0 / 0.5 = 0.0
+    expected = np.array([0.5, 0.5, 0.0])
+    np.testing.assert_array_almost_equal(delta, expected)
+
+
+def test_shap_importance_delta_shape_mismatch_raises():
+    """Mismatched shapes raise ValueError."""
+    train = np.array([0.1, 0.2, 0.3])
+    test = np.array([0.1, 0.2])
+    with pytest.raises(ValueError, match="must have the same shape"):
+        compute_shap_importance_delta(train, test)

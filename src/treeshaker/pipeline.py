@@ -14,6 +14,7 @@ from .importance import (
     compute_mutual_information,
     compute_permutation_importance,
     compute_shap_importance,
+    compute_shap_importance_delta,
     compute_shap_interactions,
 )
 from .leakage_detection import LeakageDetector
@@ -499,6 +500,33 @@ class FeatureSelectionPipeline:
             random_seed=self.config.random_seed,
         )
 
+        # Optionally compute SHAP importance on train+val for overfit/leakage
+        # diagnostics (does not change the primary test-based evaluation).
+        shap_importance_train = None
+        shap_importance_delta = None
+        if self.config.compute_train_importance:
+            if self.train_data is None or self.val_data is None:
+                raise RuntimeError(
+                    "load_data() must be called before compute_train_importance"
+                )
+            train_val_data = pd.concat(
+                [self.train_data, self.val_data], ignore_index=True
+            )
+            shap_importance_train = compute_shap_importance(
+                model=self.model,
+                data=train_val_data,
+                feature_names=self.feature_names,
+                sample_size=self.config.shap_sample_size,
+                random_seed=self.config.random_seed,
+            )
+            shap_importance_delta = compute_shap_importance_delta(
+                train_importance=shap_importance_train,
+                test_importance=shap_importance,
+            )
+            self.logger.info(
+                "Train-vs-test SHAP importance delta computed (diagnostic only)"
+            )
+
         perm_importance, perm_importance_std = compute_permutation_importance(
             model=self.model,
             data=self.test_data,
@@ -670,6 +698,9 @@ class FeatureSelectionPipeline:
 
         if self.config.check_residuals:
             result_columns["residual_correlation"] = residual_correlation
+
+        if self.config.compute_train_importance and shap_importance_delta is not None:
+            result_columns["train_test_importance_delta"] = shap_importance_delta
 
         self.results = (
             pd.DataFrame(result_columns)

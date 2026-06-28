@@ -69,6 +69,53 @@ def compute_shap_importance(
     return mean_abs
 
 
+def compute_shap_importance_delta(
+    train_importance: np.ndarray,
+    test_importance: np.ndarray,
+) -> np.ndarray:
+    """
+    Compute the train-vs-test SHAP importance delta as a diagnostic signal.
+
+    Delta is computed as abs(train_importance - test_importance) / test_importance,
+    normalized by test importance and guarding against division by zero. Large deltas
+    (e.g., >0.5) suggest potential overfit or leakage in the training data, since
+    the model assigns different importance to features when evaluated on training
+    vs held-out test data.
+
+    Division by zero (test_importance == 0) is handled by returning 0, following
+    the same guard convention as WAPE in utils.py. This treats zero test importance
+    as "no signal to compare against," placing no blame on the train importance.
+
+    Args:
+        train_importance: Mean absolute SHAP values computed on train+val data.
+            Array of shape (n_features,).
+        test_importance: Mean absolute SHAP values computed on held-out test data.
+            Array of shape (n_features,). Must match train_importance's shape.
+
+    Returns:
+        Array of shape (n_features,) with relative delta values. Values are
+        non-negative and unbounded above (no upper cap on relative difference).
+        A value of 0.5 means train and test importance differed by 50% (relative
+        to test); 1.0 means they differed by 100%, etc.
+    """
+    train_importance = np.asarray(train_importance)
+    test_importance = np.asarray(test_importance)
+
+    if train_importance.shape != test_importance.shape:
+        raise ValueError(
+            f"train_importance and test_importance must have the same shape; "
+            f"got {train_importance.shape} vs {test_importance.shape}"
+        )
+
+    deltas = np.zeros_like(test_importance, dtype=np.float64)
+    nonzero_mask = test_importance != 0
+    deltas[nonzero_mask] = (
+        np.abs(train_importance[nonzero_mask] - test_importance[nonzero_mask])
+        / test_importance[nonzero_mask]
+    )
+    return deltas
+
+
 def compute_shap_interactions(
     model: Any,
     data: pd.DataFrame,
