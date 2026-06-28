@@ -281,6 +281,36 @@ def run_catboost_importance(
     return [float(i) for i in importances]
 
 
+def run_rf_baseline_importance(
+    data: pd.DataFrame,
+    target_column: str,
+    feature_names: list[str],
+    task: str,
+    random_seed: int = 42,
+) -> list[float]:
+    """Fit Random Forest baseline model and return normalized feature importances."""
+    from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+
+    # sklearn's RandomForest rejects the categorical dtype XGBoost consumes
+    # natively elsewhere in this pipeline. Ordinal-encode just for this call.
+    X = data[feature_names].copy()
+    for col in X.select_dtypes(include="category").columns:
+        X[col] = X[col].cat.codes
+    y = data[target_column]
+
+    if task in ("binary", "multiclass"):
+        model = RandomForestClassifier(random_state=random_seed, n_jobs=1)
+    else:
+        model = RandomForestRegressor(random_state=random_seed, n_jobs=1)
+
+    model.fit(X, y)
+    importances = model.feature_importances_
+    total = float(sum(importances))
+    if total > 0:
+        return [float(i / total) for i in importances]
+    return [float(i) for i in importances]
+
+
 def derive_prefix_groups(feature_names: list[str]) -> dict[str, list[str]]:
     """Auto-derive feature groups from a common prefix before the last underscore.
 
@@ -1048,6 +1078,18 @@ class FeatureSelectionPipeline:
         if self.config.use_catboost:
             result_columns["catboost_importance"] = run_catboost_importance(
                 data=self.test_data,
+                target_column=self.config.target_column,
+                feature_names=self.feature_names,
+                task=self.config.task,
+                random_seed=self.config.random_seed,
+            )
+
+        if self.config.use_rf_baseline:
+            train_val_data = pd.concat(
+                [self.train_data, self.val_data], ignore_index=True
+            )
+            result_columns["rf_importance"] = run_rf_baseline_importance(
+                data=train_val_data,
                 target_column=self.config.target_column,
                 feature_names=self.feature_names,
                 task=self.config.task,

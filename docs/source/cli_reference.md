@@ -110,6 +110,7 @@ treeshaker --input <file> --target <column> --task <type> [options]
 | `--use-rfecv` | off | Run sklearn RFECV feature selection and add `rfecv_ranking` column |
 | `--use-lightgbm` | off | Compute LightGBM feature importances as `lightgbm_importance` column |
 | `--use-catboost` | off | Compute CatBoost feature importances as `catboost_importance` column |
+| `--use-rf-baseline` | off | Compute Random Forest baseline importances as `rf_importance` column |
 
 
 ## Feature synthesis (opt-in)

@@ -269,6 +269,10 @@ class Config:
     """If True, compute CatBoost model feature importances as catboost_importance
     column with native categorical handling. Off by default."""
 
+    use_rf_baseline: bool = False
+    """If True, compute sklearn Random Forest baseline feature importances as
+    rf_importance column for cross-checking. Off by default."""
+
     def __post_init__(self) -> None:
         """Validate configuration values."""
         valid_tasks = {"binary", "multiclass", "regression"}

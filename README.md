@@ -19,6 +19,7 @@ Most feature-importance tools give you a single number per feature from a single
 - **RFECV feature selection** — opt-in feature elimination with `--use-rfecv` (`use_rfecv=True`), adding an `rfecv_ranking` column (1 = selected feature rank).
 - **LightGBM importance cross-validation** — opt-in model swap with `--use-lightgbm` (`use_lightgbm=True`), adding a `lightgbm_importance` column.
 - **CatBoost importance backend** — opt-in model evaluation with native categorical handling using `--use-catboost` (`use_catboost=True`), adding a `catboost_importance` column.
+- **Random Forest baseline importance** — opt-in cross-check column with `--use-rf-baseline` (`use_rf_baseline=True`), adding an `rf_importance` column.
 
 ## Quick start
 

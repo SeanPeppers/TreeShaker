@@ -340,6 +340,12 @@ def parse_arguments() -> argparse.Namespace:
         action="store_true",
         help="Compute CatBoost feature importances as catboost_importance column.",
     )
+    parser.add_argument(
+        "--use-rf-baseline",
+        action="store_true",
+        help="Compute sklearn Random Forest baseline feature importances as"
+        " rf_importance column.",
+    )
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging.")
     return parser.parse_args()
 
@@ -428,6 +434,7 @@ def main() -> int:
             use_rfecv=args.use_rfecv,
             use_lightgbm=args.use_lightgbm,
             use_catboost=args.use_catboost,
+            use_rf_baseline=args.use_rf_baseline,
         )
 
     except ConfigError as exc:
