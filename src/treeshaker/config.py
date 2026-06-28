@@ -129,15 +129,25 @@ class Config:
     output_file: str = "treeshaker_results.csv"
     output_format: str = "csv"
     leakage_screening: Literal["exact", "approximate"] = "exact"
-    """Which algorithm to use for near-duplicate feature screening in leakage
-    detection. "exact" (default) uses pairwise correlation (O(p^2) where p is
-    the feature count), which is always accurate but slow on wide datasets
+    """Which algorithm to use for near-duplicate *numeric* feature screening in
+    leakage detection. "exact" (default) uses pairwise correlation (O(p^2) where p
+    is the feature count), which is always accurate but slow on wide datasets
     (thousands of features). "approximate" uses SimHash-based locality-sensitive
     hashing via an optional Rust extension for near-linear-in-p screening,
     significantly faster on wide data but may miss some true near-duplicates that
     have weak hash collisions. Requires the optional Rust extension (install with
     pip install treeshaker[fast]). Falls back to "exact" with a warning if the
-    extension is unavailable."""
+    extension is unavailable.
+
+    Scope: this setting only controls the numeric near-duplicate/correlation
+    check (`LeakageDetector._check_near_duplicates*`); it has no effect on the
+    numeric target-correlation check or on categorical proxy-leakage detection.
+    A categorical feature that is a near-perfect proxy for the target (e.g. a
+    post-outcome field) is caught separately and unconditionally by the
+    bias-corrected Cramer's V association check (see
+    `LeakageConfig.categorical_assoc_threshold`), which always runs regardless
+    of `leakage_screening`. Switching between "exact" and "approximate" never
+    changes whether a categorical column is flagged."""
     test_size: float = 0.2
     """Fraction of the FULL dataset held out as the final test set, used for
     importance evaluation and leakage statistics. Never used for fitting any

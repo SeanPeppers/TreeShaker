@@ -135,7 +135,11 @@ class LeakageDetector:
     - **Near-constant values**: A feature that is almost always the same
       value carries no signal and wastes model capacity.
     - **Near-duplicate features**: Features that are nearly identical to
-      another feature add redundancy without extra predictive value.
+      another *numeric* feature add redundancy without extra predictive
+      value. This check (and the `screening_mode`/`leakage_screening`
+      exact-vs-approximate choice below) only ever looks at numeric
+      columns -- it has no bearing on categorical proxy-leakage, which is
+      caught by the categorical target association check above instead.
     - **Multicollinearity (VIF)**: Features that can be predicted almost
       perfectly by a linear combination of the *other* features are
       redundant even when no single pairwise correlation looks extreme.
@@ -156,6 +160,12 @@ class LeakageDetector:
 
     Args:
         config: A LeakageConfig instance with detection thresholds.
+        screening_mode: "exact" or "approximate" -- selects the algorithm
+            used for the near-duplicate *numeric* feature check only (see
+            `_check_near_duplicates`). It has no effect on any other check,
+            including the always-on categorical target association
+            (Cramer's V) check that is responsible for catching categorical
+            proxy-leakage columns.
     """
 
     def __init__(
@@ -467,10 +477,15 @@ class LeakageDetector:
         feature_names: list[str],
         warnings: dict[str, list[str]],
     ) -> None:
-        """Flag features that are nearly identical to another feature.
+        """Flag numeric features that are nearly identical to another numeric
+        feature.
 
         Uses either exact pairwise correlation (O(p^2)) or approximate
-        LSH-based screening (near-linear) depending on screening_mode.
+        LSH-based screening (near-linear) depending on screening_mode. Only
+        ever considers numeric columns (see the `numeric_features` filter
+        below) -- categorical proxy-leakage is caught separately by
+        `_check_categorical_target_association` (Cramer's V), which always
+        runs regardless of screening_mode.
         """
         numeric_features = [
             name for name in feature_names if pd.api.types.is_numeric_dtype(df[name])

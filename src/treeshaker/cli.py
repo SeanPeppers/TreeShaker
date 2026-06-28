@@ -281,13 +281,15 @@ def parse_arguments() -> argparse.Namespace:
         "--leakage-screening",
         default="exact",
         choices=["exact", "approximate"],
-        help="Algorithm for near-duplicate feature screening in leakage"
-        " detection. 'exact' (default) uses pairwise correlation (O(p^2),"
-        " always accurate but slow on wide data). 'approximate' uses"
+        help="Algorithm for near-duplicate *numeric* feature screening in"
+        " leakage detection. 'exact' (default) uses pairwise correlation"
+        " (O(p^2), always accurate but slow on wide data). 'approximate' uses"
         " SimHash-based LSH via optional Rust extension for near-linear-in-p"
         " screening (much faster on wide data but may miss weak collisions)."
         " Requires 'pip install treeshaker[fast]'; falls back to 'exact'"
-        " with a warning if unavailable.",
+        " with a warning if unavailable. Does not affect categorical"
+        " proxy-leakage detection, which is a separate, always-on Cramer's V"
+        " check (see LeakageConfig.categorical_assoc_threshold).",
     )
     parser.add_argument(
         "--compute-train-importance",
