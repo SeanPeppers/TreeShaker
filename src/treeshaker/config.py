@@ -128,6 +128,16 @@ class Config:
     task: str
     output_file: str = "treeshaker_results.csv"
     output_format: str = "csv"
+    leakage_screening: Literal["exact", "approximate"] = "exact"
+    """Which algorithm to use for near-duplicate feature screening in leakage
+    detection. "exact" (default) uses pairwise correlation (O(p^2) where p is
+    the feature count), which is always accurate but slow on wide datasets
+    (thousands of features). "approximate" uses SimHash-based locality-sensitive
+    hashing via an optional Rust extension for near-linear-in-p screening,
+    significantly faster on wide data but may miss some true near-duplicates that
+    have weak hash collisions. Requires the optional Rust extension (install with
+    pip install treeshaker[fast]). Falls back to "exact" with a warning if the
+    extension is unavailable."""
     test_size: float = 0.2
     """Fraction of the FULL dataset held out as the final test set, used for
     importance evaluation and leakage statistics. Never used for fitting any
@@ -231,6 +241,12 @@ class Config:
         valid_tasks = {"binary", "multiclass", "regression"}
         if self.task not in valid_tasks:
             raise ConfigError(f"task must be one of {valid_tasks}, got {self.task!r}")
+        valid_screenings = {"exact", "approximate"}
+        if self.leakage_screening not in valid_screenings:
+            raise ConfigError(
+                f"leakage_screening must be one of {valid_screenings},"
+                f" got {self.leakage_screening!r}"
+            )
         if not 0 < self.test_size < 1:
             raise ConfigError(f"test_size must be in (0, 1), got {self.test_size}")
         if not 0 < self.val_size < 1:

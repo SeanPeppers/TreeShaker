@@ -638,7 +638,9 @@ class FeatureSelectionPipeline:
         # correlation) across the whole dataset, not held-out generalization
         # -- unlike importance evaluation above, using all three splits here
         # is correct and intentional.
-        leakage_detector = LeakageDetector(self.config.leakage_config)
+        leakage_detector = LeakageDetector(
+            self.config.leakage_config, screening_mode=self.config.leakage_screening
+        )
         combined_data = pd.concat(
             [self.train_data, self.val_data, self.test_data], ignore_index=True
         )

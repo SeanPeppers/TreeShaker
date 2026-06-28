@@ -140,3 +140,8 @@ marketing.md
 
 # graphify knowledge-graph output (local index, regenerable, huge)
 /graphify-out/
+
+# Rust build artifacts
+/rust/target/
+/rust/**/target/
+Cargo.lock

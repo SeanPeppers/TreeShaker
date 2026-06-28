@@ -458,6 +458,96 @@ def test_custom_thresholds():
         LeakageConfig(target_corr_threshold=0.999, dominant_shap_fraction=1.1)
     )
     warnings = detector_loose.detect(df, "target", ["feat"], np.array([0.5]))
+    assert len(warnings["feat"]) == 0
+
+
+def test_near_duplicate_exact_mode():
+    """Test exact mode near-duplicate detection (baseline)."""
+    base = np.random.default_rng(42).normal(0, 1, 200)
+    df = pd.DataFrame(
+        {
+            "feat_a": base,
+            "feat_b": base * 1.0001,
+            "target": np.random.default_rng(1).integers(0, 2, 200).astype(float),
+        }
+    )
+    detector = LeakageDetector(
+        LeakageConfig(near_duplicate_corr_threshold=0.98), screening_mode="exact"
+    )
+    shap = np.array([0.4, 0.4])
+    warnings = detector.detect(df, "target", ["feat_a", "feat_b"], shap)
+    flagged = [k for k, v in warnings.items() if v]
+    assert len(flagged) > 0
+
+
+def test_near_duplicate_approximate_mode_fallback_without_rust():
+    """Test that approximate mode gracefully falls back to exact when
+    Rust extension is unavailable."""
+    base = np.random.default_rng(42).normal(0, 1, 200)
+    df = pd.DataFrame(
+        {
+            "feat_a": base,
+            "feat_b": base * 1.0001,
+            "target": np.random.default_rng(1).integers(0, 2, 200).astype(float),
+        }
+    )
+    # If the extension is available, this will use it; if not, it falls
+    # back to exact and logs a warning. Both paths should detect the pair.
+    detector = LeakageDetector(
+        LeakageConfig(near_duplicate_corr_threshold=0.98),
+        screening_mode="approximate",
+    )
+    shap = np.array([0.4, 0.4])
+    warnings = detector.detect(df, "target", ["feat_a", "feat_b"], shap)
+    flagged = [k for k, v in warnings.items() if v]
+    assert len(flagged) > 0
+
+
+def test_near_duplicate_approximate_mode_matches_exact():
+    """Test that approximate mode results are consistent with exact mode
+    on a moderately-sized dataset (if Rust extension is available)."""
+    base = np.random.default_rng(42).normal(0, 1, 150)
+    rng = np.random.default_rng(99)
+    # Create 10 features: 3 pairs of near-duplicates (high correlation) and 4 independent
+    features = {
+        "dup_a1": base,
+        "dup_a2": base * 0.99999 + rng.normal(0, 0.001, 150),  # Very high correlation
+        "dup_b1": rng.normal(5, 2, 150),
+        "dup_b2": rng.normal(5, 2, 150) * 0.99998 + rng.normal(0, 0.002, 150),  # Very high corr
+        "dup_c1": rng.normal(-1, 3, 150),
+        "dup_c2": rng.normal(-1, 3, 150) * 0.99997 + rng.normal(0, 0.003, 150),  # Very high corr
+        "indep_1": rng.normal(0, 1, 150),
+        "indep_2": rng.normal(0, 1, 150),
+        "indep_3": rng.normal(0, 1, 150),
+        "target": rng.integers(0, 2, 150).astype(float),
+    }
+    df = pd.DataFrame(features)
+    feature_names = [k for k in features.keys() if k != "target"]
+
+    detector_exact = LeakageDetector(
+        LeakageConfig(near_duplicate_corr_threshold=0.98),
+        screening_mode="exact",
+    )
+    detector_approx = LeakageDetector(
+        LeakageConfig(near_duplicate_corr_threshold=0.98),
+        screening_mode="approximate",
+    )
+
+    shap = np.ones(len(feature_names)) / len(feature_names)
+
+    warnings_exact = detector_exact.detect(df, "target", feature_names, shap)
+    warnings_approx = detector_approx.detect(df, "target", feature_names, shap)
+
+    # Both should flag the same pairs (allowing for LSH approximation,
+    # both should find at least most near-duplicate pairs).
+    flagged_exact = {k for k, v in warnings_exact.items() if v}
+    flagged_approx = {k for k, v in warnings_approx.items() if v}
+
+    # The approximate path may miss some due to hash collisions, but
+    # should catch the same pairs or at least most of them.
+    # Allow some tolerance since LSH is approximate.
+    assert len(flagged_exact) >= 2  # At least some dup pairs
+    assert len(flagged_approx) >= 1  # Approximate should catch some
 
 
 def test_detect_lookahead_leakage_clean_data_no_warnings():

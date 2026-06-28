@@ -1,5 +1,6 @@
 """Data leakage and logical error detection for feature columns."""
 
+import logging
 import re
 from dataclasses import dataclass, field
 
@@ -7,6 +8,16 @@ import numpy as np
 import pandas as pd
 from scipy.stats.contingency import association
 from sklearn.linear_model import LinearRegression
+
+logger = logging.getLogger(__name__)
+
+# Attempt to import the optional Rust LSH extension for approximate screening.
+try:
+    import treeshaker_lsh
+
+    _LSH_AVAILABLE = True
+except ImportError:
+    _LSH_AVAILABLE = False
 
 
 @dataclass
@@ -146,8 +157,11 @@ class LeakageDetector:
         config: A LeakageConfig instance with detection thresholds.
     """
 
-    def __init__(self, config: LeakageConfig | None = None) -> None:
+    def __init__(
+        self, config: LeakageConfig | None = None, screening_mode: str = "exact"
+    ) -> None:
         self.config = config or LeakageConfig()
+        self.screening_mode = screening_mode
 
     def detect(
         self,
@@ -452,13 +466,29 @@ class LeakageDetector:
         feature_names: list[str],
         warnings: dict[str, list[str]],
     ) -> None:
-        """Flag features that are nearly identical to another feature."""
+        """Flag features that are nearly identical to another feature.
+
+        Uses either exact pairwise correlation (O(p^2)) or approximate
+        LSH-based screening (near-linear) depending on screening_mode.
+        """
         numeric_features = [
             name for name in feature_names if pd.api.types.is_numeric_dtype(df[name])
         ]
         if len(numeric_features) < 2:
             return
 
+        if self.screening_mode == "approximate":
+            self._check_near_duplicates_approximate(df, numeric_features, warnings)
+        else:
+            self._check_near_duplicates_exact(df, numeric_features, warnings)
+
+    def _check_near_duplicates_exact(
+        self,
+        df: pd.DataFrame,
+        numeric_features: list[str],
+        warnings: dict[str, list[str]],
+    ) -> None:
+        """Exact pairwise correlation screening (O(p^2))."""
         corr_matrix = df[numeric_features].corr().abs()
 
         for i, name in enumerate(numeric_features):
@@ -477,6 +507,51 @@ class LeakageDetector:
                         f" threshold). Keeping both adds redundancy without"
                         f" extra signal — consider dropping one."
                     )
+
+    def _check_near_duplicates_approximate(
+        self,
+        df: pd.DataFrame,
+        numeric_features: list[str],
+        warnings: dict[str, list[str]],
+    ) -> None:
+        """Approximate LSH-based near-duplicate screening with fallback."""
+        if not _LSH_AVAILABLE:
+            logger.warning(
+                "leakage_screening='approximate' requested but Rust LSH"
+                " extension unavailable. Install with"
+                " 'pip install treeshaker[fast]' or falling back to exact"
+                " screening. This may be slow on wide datasets."
+            )
+            self._check_near_duplicates_exact(df, numeric_features, warnings)
+            return
+
+        try:
+            # Prepare feature matrix as (n_features, n_rows) for LSH
+            feature_data = df[numeric_features].to_numpy().T  # Transpose to (p, n)
+            feature_data_f64 = feature_data.astype(np.float64)
+
+            # Call Rust LSH function
+            candidates = treeshaker_lsh.simhash_screen(
+                feature_data_f64, num_hashes=24, seed=42
+            )
+
+            # Convert candidate indices to feature names and check thresholds
+            for i, j, corr_val in candidates:
+                if corr_val >= self.config.near_duplicate_corr_threshold:
+                    name_i = numeric_features[i]
+                    name_j = numeric_features[j]
+                    warnings[name_i].append(
+                        f"Nearly identical to '{name_j}' (correlation:"
+                        f" {corr_val:.2f}, at or above the"
+                        f" {self.config.near_duplicate_corr_threshold:.2f}"
+                        f" threshold). Keeping both adds redundancy without"
+                        f" extra signal — consider dropping one."
+                    )
+        except Exception as e:
+            logger.warning(
+                f"Error during approximate LSH screening, falling back to exact: {e}"
+            )
+            self._check_near_duplicates_exact(df, numeric_features, warnings)
 
     def _check_multicollinearity(
         self,

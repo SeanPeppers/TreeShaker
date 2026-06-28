@@ -278,6 +278,18 @@ def parse_arguments() -> argparse.Namespace:
         " matching prior behavior.",
     )
     parser.add_argument(
+        "--leakage-screening",
+        default="exact",
+        choices=["exact", "approximate"],
+        help="Algorithm for near-duplicate feature screening in leakage"
+        " detection. 'exact' (default) uses pairwise correlation (O(p^2),"
+        " always accurate but slow on wide data). 'approximate' uses"
+        " SimHash-based LSH via optional Rust extension for near-linear-in-p"
+        " screening (much faster on wide data but may miss weak collisions)."
+        " Requires 'pip install treeshaker[fast]'; falls back to 'exact'"
+        " with a warning if unavailable.",
+    )
+    parser.add_argument(
         "--compute-train-importance",
         action="store_true",
         help="Compute SHAP importance on the combined train+val dataset in"
@@ -340,6 +352,7 @@ def main() -> int:
             task=args.task,
             output_file=args.output,
             output_format=args.output_format,
+            leakage_screening=args.leakage_screening,
             test_size=args.test_size,
             val_size=args.val_size,
             random_seed=args.random_seed,

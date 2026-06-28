@@ -41,6 +41,9 @@ demo = [
 mcp = [
     "mcp>=1.0.0",
 ]
+fast = [
+    "treeshaker_lsh>=0.1.0",
+]
 docs = [
     "sphinx>=7.0.0",
     "furo>=2024.1.0",
@@ -60,6 +63,9 @@ packages = ["src/treeshaker"]
 # ancient numba (0.53.1, 2021) that lacks Python 3.13 wheels. Cap numpy so
 # the resolver stays on modern, wheel-available numba/llvmlite releases.
 constraint-dependencies = ["numpy<2.5"]
+
+[tool.uv.sources]
+treeshaker_lsh = { path = "rust/treeshaker_lsh" }
 
 [tool.ruff]
 target-version = "py313"
