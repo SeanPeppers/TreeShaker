@@ -346,6 +346,12 @@ def parse_arguments() -> argparse.Namespace:
         help="Compute sklearn Random Forest baseline feature importances as"
         " rf_importance column.",
     )
+    parser.add_argument(
+        "--use-sklearn-permutation-importance",
+        action="store_true",
+        help="Compute model-agnostic sklearn permutation importance as"
+        " sklearn_permutation_importance column.",
+    )
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging.")
     return parser.parse_args()
 
@@ -435,6 +441,9 @@ def main() -> int:
             use_lightgbm=args.use_lightgbm,
             use_catboost=args.use_catboost,
             use_rf_baseline=args.use_rf_baseline,
+            use_sklearn_permutation_importance=(
+                args.use_sklearn_permutation_importance
+            ),
         )
 
     except ConfigError as exc:

@@ -273,6 +273,11 @@ class Config:
     """If True, compute sklearn Random Forest baseline feature importances as
     rf_importance column for cross-checking. Off by default."""
 
+    use_sklearn_permutation_importance: bool = False
+    """If True, compute model-agnostic sklearn permutation importance as
+    sklearn_permutation_importance column on the existing trained model.
+    Off by default."""
+
     def __post_init__(self) -> None:
         """Validate configuration values."""
         valid_tasks = {"binary", "multiclass", "regression"}

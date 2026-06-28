@@ -111,6 +111,7 @@ treeshaker --input <file> --target <column> --task <type> [options]
 | `--use-lightgbm` | off | Compute LightGBM feature importances as `lightgbm_importance` column |
 | `--use-catboost` | off | Compute CatBoost feature importances as `catboost_importance` column |
 | `--use-rf-baseline` | off | Compute Random Forest baseline importances as `rf_importance` column |
+| `--use-sklearn-permutation-importance` | off | Compute sklearn permutation importance as `sklearn_permutation_importance` column |
 
 
 ## Feature synthesis (opt-in)

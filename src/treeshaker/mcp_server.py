@@ -67,6 +67,7 @@ def _build_config(
     use_lightgbm: bool = False,
     use_catboost: bool = False,
     use_rf_baseline: bool = False,
+    use_sklearn_permutation_importance: bool = False,
     config_overrides: dict | None = None,
 ) -> Config:
     """Build a Config from run_pipeline's explicit kwargs plus generic overrides.
@@ -113,6 +114,7 @@ def _build_config(
         "use_lightgbm": use_lightgbm,
         "use_catboost": use_catboost,
         "use_rf_baseline": use_rf_baseline,
+        "use_sklearn_permutation_importance": use_sklearn_permutation_importance,
     }
 
     if config_overrides:
@@ -151,6 +153,7 @@ def run_pipeline(
     use_lightgbm: bool = False,
     use_catboost: bool = False,
     use_rf_baseline: bool = False,
+    use_sklearn_permutation_importance: bool = False,
     config_overrides: dict | None = None,
 ) -> dict:
     """Run the full TreeShaker feature selection pipeline end to end.
@@ -182,6 +185,8 @@ def run_pipeline(
         use_lightgbm: Compute LightGBM feature importances (opt-in).
         use_catboost: Compute CatBoost feature importances (opt-in).
         use_rf_baseline: Compute Random Forest baseline feature importances (opt-in).
+        use_sklearn_permutation_importance: Compute sklearn permutation
+            importance on the existing trained model (opt-in).
         config_overrides: Optional dict of additional Config field overrides
             (e.g. {"shap_importance_threshold": 0.02}) for anything not
             covered by the explicit kwargs above.
@@ -217,6 +222,7 @@ def run_pipeline(
             use_lightgbm=use_lightgbm,
             use_catboost=use_catboost,
             use_rf_baseline=use_rf_baseline,
+            use_sklearn_permutation_importance=use_sklearn_permutation_importance,
             config_overrides=config_overrides,
         )
 

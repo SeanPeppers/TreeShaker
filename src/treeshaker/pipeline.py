@@ -311,6 +311,38 @@ def run_rf_baseline_importance(
     return [float(i) for i in importances]
 
 
+def run_sklearn_permutation_importance(
+    model: Any,
+    data: pd.DataFrame,
+    target_column: str,
+    feature_names: list[str],
+    task: str,
+    n_permutations: int = 5,
+    random_seed: int = 42,
+) -> list[float]:
+    """Compute model-agnostic sklearn permutation importance."""
+    from sklearn.inspection import permutation_importance
+
+    X = data[feature_names]
+    y = data[target_column]
+
+    if task in ("binary", "multiclass"):
+        scoring = "roc_auc" if task == "binary" else "roc_auc_ovr"
+    else:
+        scoring = "neg_mean_squared_error"
+
+    res = permutation_importance(
+        model,
+        X,
+        y,
+        scoring=scoring,
+        n_repeats=n_permutations,
+        random_state=random_seed,
+        n_jobs=1,
+    )
+    return [float(i) for i in res.importances_mean]
+
+
 def derive_prefix_groups(feature_names: list[str]) -> dict[str, list[str]]:
     """Auto-derive feature groups from a common prefix before the last underscore.
 
@@ -1094,6 +1126,19 @@ class FeatureSelectionPipeline:
                 feature_names=self.feature_names,
                 task=self.config.task,
                 random_seed=self.config.random_seed,
+            )
+
+        if self.config.use_sklearn_permutation_importance:
+            result_columns["sklearn_permutation_importance"] = (
+                run_sklearn_permutation_importance(
+                    model=self.model,
+                    data=self.test_data,
+                    target_column=self.config.target_column,
+                    feature_names=self.feature_names,
+                    task=self.config.task,
+                    n_permutations=self.config.n_permutations,
+                    random_seed=self.config.random_seed,
+                )
             )
 
         self.results = (

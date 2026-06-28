@@ -20,6 +20,7 @@ Most feature-importance tools give you a single number per feature from a single
 - **LightGBM importance cross-validation** — opt-in model swap with `--use-lightgbm` (`use_lightgbm=True`), adding a `lightgbm_importance` column.
 - **CatBoost importance backend** — opt-in model evaluation with native categorical handling using `--use-catboost` (`use_catboost=True`), adding a `catboost_importance` column.
 - **Random Forest baseline importance** — opt-in cross-check column with `--use-rf-baseline` (`use_rf_baseline=True`), adding an `rf_importance` column.
+- **Sklearn permutation importance** — opt-in evaluation with `--use-sklearn-permutation-importance` (`use_sklearn_permutation_importance=True`), adding an `sklearn_permutation_importance` column computed using scikit-learn's permutation_importance on the existing trained model.
 
 ## Quick start
 

@@ -93,6 +93,7 @@ See [BootstrapConfig](#bootstrapconfig) below.
 | `use_lightgbm` | `--use-lightgbm` | bool | `False` | Compute LightGBM feature importances as `lightgbm_importance` |
 | `use_catboost` | `--use-catboost` | bool | `False` | Compute CatBoost feature importances as `catboost_importance` |
 | `use_rf_baseline` | `--use-rf-baseline` | bool | `False` | Compute Random Forest baseline importances as `rf_importance` |
+| `use_sklearn_permutation_importance` | `--use-sklearn-permutation-importance` | bool | `False` | Compute sklearn permutation importance as `sklearn_permutation_importance` |
 
 
 See [ResidualConfig](#residualconfig) below.
