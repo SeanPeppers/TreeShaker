@@ -155,6 +155,14 @@ def parse_arguments() -> argparse.Namespace:
         " recommendations that conflict with residual evidence.",
     )
     parser.add_argument(
+        "--flag-leakage-importance-mismatch",
+        action="store_true",
+        help="Flag features that are high-importance (Keep) but have active"
+        " leakage warnings. This highlights the dangerous case where a"
+        " feature is statistically suspicious despite being useful to the"
+        " model, which may indicate undetected leakage. (default: False)",
+    )
+    parser.add_argument(
         "--residual-corr-threshold",
         type=float,
         default=0.3,
@@ -345,6 +353,7 @@ def main() -> int:
             verbose=args.verbose,
             skip_tuning=args.skip_tuning,
             check_residuals=args.check_residuals,
+            flag_leakage_importance_mismatch=args.flag_leakage_importance_mismatch,
             residual_config=ResidualConfig(
                 residual_corr_threshold=args.residual_corr_threshold
             ),

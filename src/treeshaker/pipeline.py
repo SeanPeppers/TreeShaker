@@ -678,6 +678,34 @@ class FeatureSelectionPipeline:
                     f"{reason} {temporal_note}".strip() if reason else temporal_note
                 )
 
+            if (
+                self.config.flag_leakage_importance_mismatch
+                and not is_harmful[i]
+                and lk_warnings
+            ):
+                # Dangerous case: feature passes the importance/harm check
+                # (the model finds it useful -- not is_harmful[i]) but also
+                # has active leakage warnings. Note this is exactly the
+                # condition that produces the "Caution" tier above: leakage
+                # warnings alone, without harm, always route to Caution
+                # rather than Keep, so this can't be gated on the final
+                # reconciled `recommendation == "Keep"` -- that branch is
+                # unreachable whenever lk_warnings is truthy. Gating on the
+                # underlying importance signal (not is_harmful[i]) instead
+                # correctly captures "the model is using this feature
+                # meaningfully, yet it's also statistically suspicious,"
+                # which could indicate undetected leakage. Surfaced via
+                # reason without changing the recommendation, since the
+                # user explicitly enabled this flag.
+                mismatch_note = (
+                    "Feature is flagged with potential leakage concerns "
+                    "despite high importance — review whether this indicates "
+                    "undetected leakage."
+                )
+                reason = (
+                    f"{reason} {mismatch_note}".strip() if reason else mismatch_note
+                )
+
             recommendations.append(recommendation)
             reasons.append(reason)
 

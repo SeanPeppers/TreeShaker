@@ -615,6 +615,85 @@ def test_pipeline_balanced_dataset_unaffected_by_imbalance_logic(binary_csv, tmp
     assert pipeline.severe_class_imbalance is False
 
 
+def test_pipeline_flag_leakage_importance_mismatch_off_by_default(binary_csv, tmp_path):
+    """flag_leakage_importance_mismatch defaults to False and doesn't affect results."""
+    config = make_fast_config(binary_csv, "binary", tmp_path)
+    assert config.flag_leakage_importance_mismatch is False
+    results = FeatureSelectionPipeline(config).run()
+    # No mismatch-specific notes should appear in reasons
+    assert not any(
+        "high importance" in str(r) for r in results["reason"] if isinstance(r, str)
+    )
+
+
+def test_pipeline_flag_leakage_importance_mismatch_detects_contradiction(
+    tmp_path,
+):
+    """When enabled, flag_leakage_importance_mismatch annotates features that
+    the model finds useful (not flagged harmful) but that also have active
+    leakage warnings -- the dangerous mismatch case. The recommendation tier
+    for a feature with a leakage warning is still "Caution" (leakage warnings
+    alone always produce Caution, regardless of importance -- see the
+    reconciliation logic in FeatureSelectionPipeline.run()); this flag adds a
+    note to `reason` on top of that, it does not change the tier itself."""
+    # Create a dataset with a feature that has moderate correlation with target
+    # (just enough to trigger leakage warning) but is still important to the model.
+    np.random.seed(42)
+    n_samples = 200
+    target = np.random.binomial(1, 0.5, n_samples)
+    # feature_suspect correlates with target but not perfectly
+    # Correlation ~0.96 triggers leakage warning (threshold 0.95)
+    # but it's still useful to the model
+    feature_suspect = 0.96 * target.astype(float) + 0.04 * np.random.randn(n_samples)
+    # Add other informative features
+    feature_1 = np.random.randn(n_samples)
+    feature_2 = np.random.randn(n_samples)
+    feature_3 = np.random.randn(n_samples)
+
+    df = pd.DataFrame(
+        {
+            "feature_suspect": feature_suspect,
+            "feature_1": feature_1,
+            "feature_2": feature_2,
+            "feature_3": feature_3,
+            "target": target,
+        }
+    )
+    csv_path = tmp_path / "leaky.csv"
+    df.to_csv(csv_path, index=False)
+
+    # Run with mismatch flagging enabled and very low importance thresholds
+    # so that feature_suspect is not flagged harmful (i.e. it would be Keep
+    # on importance grounds alone, absent the leakage warning).
+    config = make_fast_config(
+        str(csv_path),
+        "binary",
+        tmp_path,
+        flag_leakage_importance_mismatch=True,
+        shap_importance_threshold=0.0001,
+        permutation_importance_threshold=0.0001,
+    )
+    results = FeatureSelectionPipeline(config).run()
+
+    # feature_suspect has a leakage warning, so it's Caution (not harmful,
+    # but leaking) -- never Keep, since any leakage warning alone routes to
+    # Caution regardless of importance.
+    suspect_row = results[results["feature_name"] == "feature_suspect"].iloc[0]
+    assert suspect_row["recommendation"] == "Caution"
+
+    # But the reason should contain the mismatch warning, since the
+    # feature is not harmful (high importance) yet still has leakage warnings.
+    assert "high importance" in suspect_row["reason"]
+    assert "potential leakage" in suspect_row["reason"]
+
+    # A feature that IS harmful (low importance) and also has a leakage
+    # warning escalates to Drop and must NOT get the mismatch note --
+    # there's no "high importance" contradiction to report for a harmful
+    # feature, regardless of the flag.
+    drop_rows = results[results["recommendation"] == "Drop"]
+    assert not any("high importance" in str(r) for r in drop_rows["reason"])
+
+
 def test_pipeline_chronological_split_preserves_order(binary_data, tmp_path):
     """When time_column is set, splits should respect chronological order."""
     # Add a time column to the test data

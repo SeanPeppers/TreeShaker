@@ -189,6 +189,13 @@ class Config:
     suggestion (see synthetic_features.py). Off by default
     (synthetic_config.synthesize_from_interactions=False); when enabled,
     also requires compute_shap_interactions=True."""
+    flag_leakage_importance_mismatch: bool = False
+    """If True, features that pass the importance threshold (Keep) but have
+    active leakage warnings are flagged with a distinct note in the reason
+    column. This highlights the potentially dangerous case of features that
+    are high-importance yet suspicious, which may indicate undetected leakage.
+    Off by default since most users follow the harm/leakage pipeline
+    normally; enable to surface this edge case explicitly."""
     compute_train_importance: bool = False
     """If True, compute SHAP importance on the combined train+val dataset
     in addition to the held-out test set, enabling detection of large
