@@ -22,6 +22,7 @@ Most feature-importance tools give you a single number per feature from a single
 - **Random Forest baseline importance** — opt-in cross-check column with `--use-rf-baseline` (`use_rf_baseline=True`), adding an `rf_importance` column.
 - **Sklearn permutation importance** — opt-in evaluation with `--use-sklearn-permutation-importance` (`use_sklearn_permutation_importance=True`), adding an `sklearn_permutation_importance` column computed using scikit-learn's permutation_importance on the existing trained model.
 - **GPU acceleration** — opt-in GPU support with `--use-gpu` (`use_gpu=True`), configuring XGBoost models with CUDA execution (`device="cuda"`).
+- **Optuna pruning & early stopping** — opt-in trial pruning with `--use-optuna-pruning` (`use_optuna_pruning=True`), using Optuna's MedianPruner and early stopping during hyperparameter search to skip unpromising trials and reduce tuning runtime.
 
 ## Quick start
 

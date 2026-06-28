@@ -531,6 +531,7 @@ class FeatureSelectionPipeline:
             Dictionary of best XGBoost hyperparameters found by Optuna.
         """
         import optuna
+        import xgboost as xgb
         from sklearn.metrics import log_loss, mean_squared_error
 
         optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -546,6 +547,23 @@ class FeatureSelectionPipeline:
         X_val = self.val_data[self.feature_names]
         y_val = self.val_data[self.config.target_column]
 
+        class _OptunaPruningCallback(xgb.callback.TrainingCallback):
+            def __init__(self, trial: optuna.Trial) -> None:
+                self.trial = trial
+
+            def after_iteration(self, model: Any, epoch: int, evals_log: dict) -> bool:
+                if not evals_log:
+                    return False
+                last_dataset = list(evals_log.values())[-1]
+                if not last_dataset:
+                    return False
+                last_metric_logs = list(last_dataset.values())[-1]
+                if last_metric_logs:
+                    self.trial.report(float(last_metric_logs[-1]), step=epoch)
+                    if self.trial.should_prune():
+                        raise optuna.TrialPruned()
+                return False
+
         def objective(trial: optuna.Trial) -> float:
             tuned_params = {
                 "max_depth": trial.suggest_int("max_depth", 3, 10),
@@ -558,21 +576,36 @@ class FeatureSelectionPipeline:
                 "min_child_weight": trial.suggest_int("min_child_weight", 1, 10),
             }
             params = _build_xgb_fit_params(tuned_params, self.config)
+            if self.config.use_optuna_pruning:
+                params["callbacks"] = [_OptunaPruningCallback(trial)]
+                params["early_stopping_rounds"] = 10
             model = _make_xgb_model(task, params)
 
+            fit_kwargs: dict[str, Any] = {
+                "eval_set": [(X_val, y_val)],
+                "verbose": False,
+            }
+
             if task in ("binary", "multiclass"):
-                model.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=False)
+                model.fit(X_train, y_train, **fit_kwargs)
                 # Binary and multiclass are both scored by log loss on the
                 # predicted class probabilities.
                 preds = model.predict_proba(X_val)
                 return log_loss(y_val, preds)
             else:
-                model.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=False)
+                model.fit(X_train, y_train, **fit_kwargs)
                 preds = model.predict(X_val)
                 return mean_squared_error(y_val, preds)
 
         sampler = optuna.samplers.TPESampler(seed=cfg.seed)
-        study = optuna.create_study(direction="minimize", sampler=sampler)
+        pruner: optuna.pruners.BasePruner = (
+            optuna.pruners.MedianPruner()
+            if self.config.use_optuna_pruning
+            else optuna.pruners.NopPruner()
+        )
+        study = optuna.create_study(
+            direction="minimize", sampler=sampler, pruner=pruner
+        )
         self.logger.info(
             f"Starting Optuna tuning: {cfg.n_trials} trials, timeout={cfg.timeout}s"
         )

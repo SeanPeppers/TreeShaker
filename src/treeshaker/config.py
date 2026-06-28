@@ -282,6 +282,10 @@ class Config:
     """If True, configure XGBoost models to use GPU acceleration (sets
     device to 'cuda'). Off by default."""
 
+    use_optuna_pruning: bool = False
+    """If True, enable Optuna trial pruning and early stopping during hyperparameter
+    tuning to skip plateauing trials. Off by default."""
+
     def __post_init__(self) -> None:
         """Validate configuration values."""
         if self.use_gpu and not detect_cuda_available():

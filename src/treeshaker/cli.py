@@ -358,6 +358,12 @@ def parse_arguments() -> argparse.Namespace:
         help="Enable GPU acceleration for XGBoost models (sets device to cuda"
         " and lets XGBoost auto-select the GPU-appropriate tree method).",
     )
+    parser.add_argument(
+        "--use-optuna-pruning",
+        action="store_true",
+        help="Enable Optuna trial pruning and early stopping during"
+        " hyperparameter tuning.",
+    )
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging.")
     return parser.parse_args()
 
@@ -451,6 +457,7 @@ def main() -> int:
                 args.use_sklearn_permutation_importance
             ),
             use_gpu=args.use_gpu,
+            use_optuna_pruning=args.use_optuna_pruning,
         )
 
     except ConfigError as exc:
