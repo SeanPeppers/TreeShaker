@@ -324,6 +324,11 @@ def parse_arguments() -> argparse.Namespace:
         action="store_true",
         help="Run Boruta feature selection and output boruta_decision column.",
     )
+    parser.add_argument(
+        "--use-rfecv",
+        action="store_true",
+        help="Run sklearn RFECV feature selection and output rfecv_ranking column.",
+    )
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging.")
     return parser.parse_args()
 
@@ -409,6 +414,7 @@ def main() -> int:
             time_column=args.time_column,
             compute_importance_divergence=args.compute_importance_divergence,
             use_boruta=args.use_boruta,
+            use_rfecv=args.use_rfecv,
         )
 
     except ConfigError as exc:

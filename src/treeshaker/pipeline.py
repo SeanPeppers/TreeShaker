@@ -161,6 +161,44 @@ def run_boruta_shap(
     return decisions
 
 
+def run_rfecv(
+    model: Any,
+    data: pd.DataFrame,
+    target_column: str,
+    feature_names: list[str],
+    task: str,
+    random_seed: int = 42,
+) -> list[int]:
+    """Run sklearn RFECV and return feature ranking (1 = selected)."""
+    from sklearn.feature_selection import RFECV
+    from sklearn.model_selection import KFold, StratifiedKFold
+
+    # sklearn's RFECV validates input via check_array, which rejects the
+    # categorical dtype XGBoost consumes natively elsewhere in this pipeline.
+    # Ordinal-encode categorical columns just for this call.
+    X = data[feature_names].copy()
+    for col in X.select_dtypes(include="category").columns:
+        X[col] = X[col].cat.codes
+    y = data[target_column]
+
+    if task in ("binary", "multiclass"):
+        cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_seed)
+        scoring = "roc_auc" if task == "binary" else "accuracy"
+    else:
+        cv = KFold(n_splits=5, shuffle=True, random_state=random_seed)
+        scoring = "neg_mean_squared_error"
+
+    selector = RFECV(
+        estimator=model,
+        step=1,
+        cv=cv,
+        scoring=scoring,
+        n_jobs=1,
+    )
+    selector.fit(X, y)
+    return [int(r) for r in selector.ranking_]
+
+
 def derive_prefix_groups(feature_names: list[str]) -> dict[str, list[str]]:
     """Auto-derive feature groups from a common prefix before the last underscore.
 
@@ -894,6 +932,19 @@ class FeatureSelectionPipeline:
             result_columns["boruta_decision"] = run_boruta_shap(
                 model=self.model,
                 data=self.test_data,
+                target_column=self.config.target_column,
+                feature_names=self.feature_names,
+                task=self.config.task,
+                random_seed=self.config.random_seed,
+            )
+
+        if self.config.use_rfecv:
+            train_val_data = pd.concat(
+                [self.train_data, self.val_data], ignore_index=True
+            )
+            result_columns["rfecv_ranking"] = run_rfecv(
+                model=self.model,
+                data=train_val_data,
                 target_column=self.config.target_column,
                 feature_names=self.feature_names,
                 task=self.config.task,

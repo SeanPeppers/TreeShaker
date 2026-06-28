@@ -16,6 +16,7 @@ Most feature-importance tools give you a single number per feature from a single
 - **Plain-English explanations** — each feature gets a Drop/Caution/Keep recommendation with clear reasoning.
 - **Cross-checked, not single-signal** — SHAP, permutation importance, mutual information, leakage statistics, and residual correlation are all computed independently. An opt-in importance divergence score (`compute_importance_divergence` / `--compute-importance-divergence`) flags features where these signals disagree about a feature's rank.
 - **Boruta feature selection** — opt-in feature selection with `--use-boruta` (`use_boruta=True`), adding a `boruta_decision` column (`Confirmed`, `Tentative`, or `Rejected`).
+- **RFECV feature selection** — opt-in feature elimination with `--use-rfecv` (`use_rfecv=True`), adding an `rfecv_ranking` column (1 = selected feature rank).
 
 ## Quick start
 

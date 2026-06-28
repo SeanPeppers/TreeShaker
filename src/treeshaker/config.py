@@ -257,6 +257,10 @@ class Config:
     column ('Confirmed', 'Tentative', or 'Rejected') to the results DataFrame.
     Off by default."""
 
+    use_rfecv: bool = False
+    """If True, run sklearn RFECV feature selection and add rfecv_ranking column
+    to the results DataFrame. Off by default."""
+
     def __post_init__(self) -> None:
         """Validate configuration values."""
         valid_tasks = {"binary", "multiclass", "regression"}
