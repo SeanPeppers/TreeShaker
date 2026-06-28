@@ -61,6 +61,7 @@ def _build_xgb_fit_params(
     Returns:
         A new dict ready to pass as XGBClassifier/XGBRegressor kwargs.
     """
+    dev = resolve_xgboost_device(config.xgboost_config.device, use_gpu=config.use_gpu)
     params = {
         **base_params,
         "random_state": (config.random_seed if random_seed is None else random_seed),
@@ -70,7 +71,10 @@ def _build_xgb_fit_params(
         # string features) without pre-encoding. A no-op when there are no
         # categorical columns.
         "enable_categorical": True,
-        "device": resolve_xgboost_device(config.xgboost_config.device),
+        # device="cuda" alone is sufficient for GPU training on modern
+        # XGBoost; tree_method="gpu_hist" was removed and is no longer a
+        # valid value (XGBoost picks "hist" automatically for either device).
+        "device": dev,
     }
     params.update(config.xgboost_config.extra_params)
     return params

@@ -278,8 +278,17 @@ class Config:
     sklearn_permutation_importance column on the existing trained model.
     Off by default."""
 
+    use_gpu: bool = False
+    """If True, configure XGBoost models to use GPU acceleration (sets
+    device to 'cuda'). Off by default."""
+
     def __post_init__(self) -> None:
         """Validate configuration values."""
+        if self.use_gpu and not detect_cuda_available():
+            raise ConfigError(
+                "use_gpu=True was explicitly requested but no usable CUDA"
+                " GPU was detected."
+            )
         valid_tasks = {"binary", "multiclass", "regression"}
         if self.task not in valid_tasks:
             raise ConfigError(f"task must be one of {valid_tasks}, got {self.task!r}")

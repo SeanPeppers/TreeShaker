@@ -49,24 +49,22 @@ def detect_cuda_available() -> bool:
         return False
 
 
-def resolve_xgboost_device(device: str) -> str:
+def resolve_xgboost_device(device: str, use_gpu: bool = False) -> str:
     """Resolve a configured device setting to the literal value passed to XGBoost.
 
     Args:
         device: One of "auto", "cuda", "cpu" (see XGBoostConfig.device).
+        use_gpu: If True, resolves to "cuda" regardless of device setting.
 
     Returns:
-        "cuda" or "cpu" -- the literal value to pass as XGBoost's `device`
-        param. For "auto", uses detect_cuda_available() (cached) to decide,
-        silently falling back to "cpu" if no usable GPU is found. For
-        explicit "cuda"/"cpu", returns it as-is without re-checking
-        availability -- the caller is expected to have already validated
-        "cuda" is actually usable (see Config validation), so this function
-        never raises.
+        The resolved device string ("cuda" or "cpu") to pass as XGBoost's
+        `device` parameter.
 
     Raises:
-        ValueError: If device is not one of "auto", "cuda", "cpu".
+        ValueError: If device is not one of "auto", "cuda", or "cpu".
     """
+    if use_gpu:
+        return "cuda"
     if device == "auto":
         return "cuda" if detect_cuda_available() else "cpu"
     if device in ("cuda", "cpu"):

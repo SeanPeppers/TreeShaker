@@ -352,6 +352,12 @@ def parse_arguments() -> argparse.Namespace:
         help="Compute model-agnostic sklearn permutation importance as"
         " sklearn_permutation_importance column.",
     )
+    parser.add_argument(
+        "--use-gpu",
+        action="store_true",
+        help="Enable GPU acceleration for XGBoost models (sets device to cuda"
+        " and lets XGBoost auto-select the GPU-appropriate tree method).",
+    )
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging.")
     return parser.parse_args()
 
@@ -444,6 +450,7 @@ def main() -> int:
             use_sklearn_permutation_importance=(
                 args.use_sklearn_permutation_importance
             ),
+            use_gpu=args.use_gpu,
         )
 
     except ConfigError as exc:
