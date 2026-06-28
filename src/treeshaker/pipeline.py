@@ -199,6 +199,38 @@ def run_rfecv(
     return [int(r) for r in selector.ranking_]
 
 
+def run_lightgbm_importance(
+    data: pd.DataFrame,
+    target_column: str,
+    feature_names: list[str],
+    task: str,
+    random_seed: int = 42,
+) -> list[float]:
+    """Fit LightGBM model and return normalized feature importances."""
+    try:
+        import lightgbm as lgb
+    except ImportError:
+        raise ImportError(
+            "The 'lightgbm' package is required when use_lightgbm=True."
+            " Install it with: pip install lightgbm"
+        )
+
+    X = data[feature_names]
+    y = data[target_column]
+
+    if task in ("binary", "multiclass"):
+        model = lgb.LGBMClassifier(random_state=random_seed, verbosity=-1)
+    else:
+        model = lgb.LGBMRegressor(random_state=random_seed, verbosity=-1)
+
+    model.fit(X, y)
+    importances = model.feature_importances_
+    total = float(sum(importances))
+    if total > 0:
+        return [float(i / total) for i in importances]
+    return [float(i) for i in importances]
+
+
 def derive_prefix_groups(feature_names: list[str]) -> dict[str, list[str]]:
     """Auto-derive feature groups from a common prefix before the last underscore.
 
@@ -944,6 +976,18 @@ class FeatureSelectionPipeline:
             )
             result_columns["rfecv_ranking"] = run_rfecv(
                 model=self.model,
+                data=train_val_data,
+                target_column=self.config.target_column,
+                feature_names=self.feature_names,
+                task=self.config.task,
+                random_seed=self.config.random_seed,
+            )
+
+        if self.config.use_lightgbm:
+            train_val_data = pd.concat(
+                [self.train_data, self.val_data], ignore_index=True
+            )
+            result_columns["lightgbm_importance"] = run_lightgbm_importance(
                 data=train_val_data,
                 target_column=self.config.target_column,
                 feature_names=self.feature_names,

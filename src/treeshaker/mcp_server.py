@@ -64,6 +64,7 @@ def _build_config(
     group_by_prefix: bool = False,
     use_boruta: bool = False,
     use_rfecv: bool = False,
+    use_lightgbm: bool = False,
     config_overrides: dict | None = None,
 ) -> Config:
     """Build a Config from run_pipeline's explicit kwargs plus generic overrides.
@@ -107,6 +108,7 @@ def _build_config(
         "group_by_prefix": group_by_prefix,
         "use_boruta": use_boruta,
         "use_rfecv": use_rfecv,
+        "use_lightgbm": use_lightgbm,
     }
 
     if config_overrides:
@@ -142,6 +144,7 @@ def run_pipeline(
     group_by_prefix: bool = False,
     use_boruta: bool = False,
     use_rfecv: bool = False,
+    use_lightgbm: bool = False,
     config_overrides: dict | None = None,
 ) -> dict:
     """Run the full TreeShaker feature selection pipeline end to end.
@@ -170,6 +173,7 @@ def run_pipeline(
         group_by_prefix: Auto-derive feature groups from common name prefixes.
         use_boruta: Run Boruta feature selection (opt-in).
         use_rfecv: Run sklearn RFECV feature selection (opt-in).
+        use_lightgbm: Compute LightGBM feature importances (opt-in).
         config_overrides: Optional dict of additional Config field overrides
             (e.g. {"shap_importance_threshold": 0.02}) for anything not
             covered by the explicit kwargs above.
@@ -202,6 +206,7 @@ def run_pipeline(
             group_by_prefix=group_by_prefix,
             use_boruta=use_boruta,
             use_rfecv=use_rfecv,
+            use_lightgbm=use_lightgbm,
             config_overrides=config_overrides,
         )
 

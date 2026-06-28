@@ -108,6 +108,7 @@ treeshaker --input <file> --target <column> --task <type> [options]
 | `--residual-corr-threshold FLOAT` | `0.3` | Flag if \|residual correlation\| ≥ this (only with `--check-residuals`) |
 | `--use-boruta` | off | Run Boruta feature selection and add `boruta_decision` column |
 | `--use-rfecv` | off | Run sklearn RFECV feature selection and add `rfecv_ranking` column |
+| `--use-lightgbm` | off | Compute LightGBM feature importances as `lightgbm_importance` column |
 
 
 ## Feature synthesis (opt-in)

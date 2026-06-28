@@ -329,6 +329,12 @@ def parse_arguments() -> argparse.Namespace:
         action="store_true",
         help="Run sklearn RFECV feature selection and output rfecv_ranking column.",
     )
+    parser.add_argument(
+        "--use-lightgbm",
+        action="store_true",
+        help="Compute LightGBM model feature importances as"
+        " lightgbm_importance column.",
+    )
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging.")
     return parser.parse_args()
 
@@ -415,6 +421,7 @@ def main() -> int:
             compute_importance_divergence=args.compute_importance_divergence,
             use_boruta=args.use_boruta,
             use_rfecv=args.use_rfecv,
+            use_lightgbm=args.use_lightgbm,
         )
 
     except ConfigError as exc:

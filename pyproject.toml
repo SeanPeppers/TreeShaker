@@ -45,8 +45,9 @@ fast = [
     "treeshaker_lsh>=0.1.0",
 ]
 boruta = []
-
-
+lightgbm = [
+    "lightgbm>=4.0.0",
+]
 docs = [
 
     "sphinx>=7.0.0",

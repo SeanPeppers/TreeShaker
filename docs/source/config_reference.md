@@ -90,6 +90,7 @@ See [BootstrapConfig](#bootstrapconfig) below.
 | `residual_config` | — | `ResidualConfig` | defaults | Nested residual diagnostics configuration |
 | `use_boruta` | `--use-boruta` | bool | `False` | Run Boruta feature selection and output `boruta_decision` |
 | `use_rfecv` | `--use-rfecv` | bool | `False` | Run sklearn RFECV feature selection and output `rfecv_ranking` |
+| `use_lightgbm` | `--use-lightgbm` | bool | `False` | Compute LightGBM feature importances as `lightgbm_importance` |
 
 
 See [ResidualConfig](#residualconfig) below.
