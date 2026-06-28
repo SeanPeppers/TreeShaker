@@ -116,6 +116,7 @@ class BootstrapConfig:
 
     n_bootstrap: int = 0
     sample_frac: float = 1.0
+    shap_importance_stability_threshold: float | None = None
 
 
 @dataclass
@@ -152,6 +153,9 @@ class Config:
     feature_groups: dict[str, list[str]] | None = None
     group_by_prefix: bool = False
     bootstrap_config: BootstrapConfig = field(default_factory=BootstrapConfig)
+    """Configuration for bootstrap ensemble importance stability analysis,
+    including the optional stability threshold to gate recommendations on
+    ranking stability when bootstrap is enabled (n_bootstrap > 0)."""
     imbalance_warning_threshold: float = 0.1
     verbose: bool = False
     skip_tuning: bool = False
@@ -250,6 +254,12 @@ class Config:
             raise ConfigError(
                 "bootstrap_config.sample_frac must be in (0, 1], got"
                 f" {self.bootstrap_config.sample_frac}"
+            )
+        if self.bootstrap_config.shap_importance_stability_threshold is not None:
+            _require_greater_than(
+                "bootstrap_config.shap_importance_stability_threshold",
+                self.bootstrap_config.shap_importance_stability_threshold,
+                0,
             )
         _require_greater_than(
             "residual_config.residual_corr_threshold",

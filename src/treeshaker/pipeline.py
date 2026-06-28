@@ -418,6 +418,79 @@ class FeatureSelectionPipeline:
 
         return results
 
+    def _apply_stability_gating(
+        self,
+        bootstrap_importances: np.ndarray,
+        recommendations: list[str],
+        reasons: list[str],
+    ) -> tuple[list[str], list[str]]:
+        """
+        Apply stability gating: demote recommendations if SHAP importance is unstable.
+
+        When bootstrap is enabled and shap_importance_stability_threshold is set,
+        compute per-feature coefficient of variation (CV = std / mean) of SHAP
+        importance across bootstrap refits. If CV exceeds threshold, demote:
+        Drop→Caution, Keep→Caution. Caution stays Caution. Adds a note to reason.
+
+        Args:
+            bootstrap_importances: Array of shape (n_bootstrap, n_features) with
+                bootstrap SHAP importance values from _run_bootstrap_importance().
+            recommendations: Current list of recommendations (Drop/Caution/Keep).
+            reasons: Current list of reason strings.
+
+        Returns:
+            Tuple of (updated_recommendations, updated_reasons) with stability
+            gating applied.
+        """
+        stability_threshold = (
+            self.config.bootstrap_config.shap_importance_stability_threshold
+        )
+        if stability_threshold is None:
+            # Stability gating disabled
+            return recommendations, reasons
+
+        means = bootstrap_importances.mean(axis=0)
+        stds = bootstrap_importances.std(axis=0)
+
+        updated_recommendations = list(recommendations)
+        updated_reasons = list(reasons)
+
+        for i, feature in enumerate(self.feature_names):
+            # Avoid division by zero: if mean SHAP is zero, CV is undefined.
+            # In that case, the feature is already demoted by harm detection,
+            # so we skip stability gating (no need to demote further).
+            if means[i] == 0:
+                continue
+
+            cv = stds[i] / means[i]
+
+            if cv > stability_threshold:
+                # Feature ranking is unstable: demote if not already Caution.
+                if updated_recommendations[i] == "Drop":
+                    updated_recommendations[i] = "Caution"
+                    note = (
+                        f"SHAP importance ranking is unstable across bootstrap "
+                        f"refits (coefficient of variation {cv:.3f} exceeds "
+                        f"threshold {stability_threshold:.3f}); demoted from Drop "
+                        f"to Caution pending further investigation."
+                    )
+                    updated_reasons[i] = (
+                        f"{updated_reasons[i]} {note}".strip()
+                        if updated_reasons[i]
+                        else note
+                    )
+                elif updated_recommendations[i] == "Keep":
+                    updated_recommendations[i] = "Caution"
+                    note = (
+                        f"SHAP importance ranking is unstable across bootstrap "
+                        f"refits (coefficient of variation {cv:.3f} exceeds "
+                        f"threshold {stability_threshold:.3f}); demoted from Keep "
+                        f"to Caution pending further investigation."
+                    )
+                    updated_reasons[i] = note
+
+        return updated_recommendations, updated_reasons
+
     def run(self) -> pd.DataFrame:
         """
         Execute the full feature selection pipeline.
@@ -719,10 +792,21 @@ class FeatureSelectionPipeline:
             "reason": reasons,
         }
 
+        bootstrap_importances = None
         if self.config.bootstrap_config.n_bootstrap > 0:
             bootstrap_importances = self._run_bootstrap_importance(best_params)
             result_columns["shap_importance_mean"] = bootstrap_importances.mean(axis=0)
             result_columns["shap_importance_std"] = bootstrap_importances.std(axis=0)
+            # Apply stability gating if threshold is configured
+            if (
+                self.config.bootstrap_config.shap_importance_stability_threshold
+                is not None
+            ):
+                recommendations, reasons = self._apply_stability_gating(
+                    bootstrap_importances, recommendations, reasons
+                )
+                result_columns["recommendation"] = recommendations
+                result_columns["reason"] = reasons
 
         if self.config.check_residuals:
             result_columns["residual_correlation"] = residual_correlation

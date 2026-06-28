@@ -140,6 +140,16 @@ def parse_arguments() -> argparse.Namespace:
         " replacement) per bootstrap iteration. (default: 1.0)",
     )
     parser.add_argument(
+        "--bootstrap-stability-threshold",
+        type=float,
+        default=None,
+        help="When set (non-None) and bootstrap is enabled (--n-bootstrap > 0),"
+        " gates recommendations on SHAP importance ranking stability. If a"
+        " feature's coefficient of variation (std/mean) exceeds this threshold,"
+        " Drop→Caution, Keep→Caution. Stability gating is disabled (None)"
+        " by default. (default: None)",
+    )
+    parser.add_argument(
         "--shap-interactions",
         action="store_true",
         help="Compute pairwise SHAP interaction values (expensive, opt-in)."
@@ -347,6 +357,7 @@ def main() -> int:
             bootstrap_config=BootstrapConfig(
                 n_bootstrap=args.n_bootstrap,
                 sample_frac=args.bootstrap_sample_frac,
+                shap_importance_stability_threshold=args.bootstrap_stability_threshold,
             ),
             compute_shap_interactions=args.shap_interactions,
             imbalance_warning_threshold=args.imbalance_threshold,
