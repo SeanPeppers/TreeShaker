@@ -227,6 +227,13 @@ class Config:
     against division by zero following the same convention as WAPE.
     None (default) disables the threshold check and reports deltas
     informationally only. Must be >= 0 if set."""
+    compute_importance_divergence: bool = False
+    """If True, compute a per-feature divergence score quantifying how much
+    SHAP importance, permutation importance, and mutual information
+    disagree about a feature's rank. 0 means all three signals agree on the
+    feature's relative rank; 1 means maximum disagreement. Off by default;
+    this is a diagnostic signal only and does not change the recommendation
+    logic."""
     time_column: str | None = None
     """Optional column name for chronological train/val/test splitting.
     When set (not None), the data is sorted by this column ascending and

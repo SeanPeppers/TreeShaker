@@ -14,7 +14,7 @@ Most feature-importance tools give you a single number per feature from a single
 - **Genuinely held-out evaluation** — every importance number is computed on a test split the model never sees, not on data it has partially memorized.
 - **Stability, not just a point estimate** — permutation importance is averaged over multiple shuffles, and an opt-in bootstrap ensemble shows whether a feature's rank holds up.
 - **Plain-English explanations** — each feature gets a Drop/Caution/Keep recommendation with clear reasoning.
-- **Cross-checked, not single-signal** — SHAP, permutation importance, mutual information, leakage statistics, and residual correlation are all computed independently.
+- **Cross-checked, not single-signal** — SHAP, permutation importance, mutual information, leakage statistics, and residual correlation are all computed independently. An opt-in importance divergence score (`compute_importance_divergence` / `--compute-importance-divergence`) flags features where these signals disagree about a feature's rank.
 
 ## Quick start
 

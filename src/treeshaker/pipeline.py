@@ -11,6 +11,7 @@ from .config import Config
 from .dtype_handling import prepare_feature_dtypes_splits
 from .harm_detection import HarmDetector
 from .importance import (
+    compute_importance_divergence,
     compute_mutual_information,
     compute_permutation_importance,
     compute_shap_importance,
@@ -815,6 +816,13 @@ class FeatureSelectionPipeline:
 
         if self.config.compute_train_importance and shap_importance_delta is not None:
             result_columns["train_test_importance_delta"] = shap_importance_delta
+
+        if self.config.compute_importance_divergence:
+            result_columns["importance_divergence"] = compute_importance_divergence(
+                shap_importance=shap_importance,
+                perm_importance=perm_importance,
+                mi_score=mi_score,
+            )
 
         self.results = (
             pd.DataFrame(result_columns)

@@ -8,6 +8,7 @@ from sklearn.datasets import make_classification, make_regression
 from sklearn.metrics import roc_auc_score
 
 from treeshaker.importance import (
+    compute_importance_divergence,
     compute_mutual_information,
     compute_permutation_importance,
     compute_shap_importance,
@@ -482,3 +483,96 @@ def test_shap_importance_delta_shape_mismatch_raises():
     test = np.array([0.1, 0.2])
     with pytest.raises(ValueError, match="must have the same shape"):
         compute_shap_importance_delta(train, test)
+
+
+def test_importance_divergence_shape():
+    """compute_importance_divergence returns correct shape."""
+    shap_imp = np.array([0.4, 0.3, 0.2, 0.1])
+    perm_imp = np.array([0.4, 0.3, 0.2, 0.1])
+    mi = np.array([0.4, 0.3, 0.2, 0.1])
+    divergence = compute_importance_divergence(shap_imp, perm_imp, mi)
+    assert divergence.shape == shap_imp.shape
+
+
+def test_importance_divergence_range():
+    """compute_importance_divergence returns values within [0, 1]."""
+    shap_imp = np.array([0.4, 0.1, 0.2, 0.3])
+    perm_imp = np.array([0.1, 0.4, 0.3, 0.2])
+    mi = np.array([0.3, 0.2, 0.4, 0.1])
+    divergence = compute_importance_divergence(shap_imp, perm_imp, mi)
+    assert (divergence >= 0).all()
+    assert (divergence <= 1).all()
+
+
+def test_importance_divergence_perfect_agreement_is_zero():
+    """Identical rankings across all three signals yield zero divergence."""
+    shap_imp = np.array([0.4, 0.3, 0.2, 0.1])
+    perm_imp = np.array([4.0, 3.0, 2.0, 1.0])  # same rank order, different scale
+    mi = np.array([0.04, 0.03, 0.02, 0.01])  # same rank order, different scale
+    divergence = compute_importance_divergence(shap_imp, perm_imp, mi)
+    np.testing.assert_array_almost_equal(divergence, np.zeros(4))
+
+
+def test_importance_divergence_high_disagreement():
+    """A feature ranked best by one signal and worst by another scores high."""
+    # Feature 0: best under SHAP, worst under perm, worst under MI.
+    shap_imp = np.array([0.9, 0.5, 0.4, 0.3])
+    perm_imp = np.array([0.1, 0.9, 0.5, 0.4])
+    mi = np.array([0.1, 0.4, 0.9, 0.5])
+    divergence = compute_importance_divergence(shap_imp, perm_imp, mi)
+    # Feature 0 has the most spread-out ranks (best/worst/worst) -- it should
+    # diverge more than a feature whose ranks are closer together.
+    assert divergence[0] > 0
+
+
+def test_importance_divergence_consensus_vs_disagreement():
+    """A feature with consistent ranks across signals diverges less than one
+    with inconsistent ranks."""
+    # Feature 0 ("strong"): top-ranked under all three signals.
+    # Feature 3 ("contested"): best under SHAP, worst under perm and MI.
+    shap_imp = np.array([0.9, 0.3, 0.2, 0.8])
+    perm_imp = np.array([0.9, 0.3, 0.2, 0.05])
+    mi = np.array([0.9, 0.3, 0.2, 0.05])
+    divergence = compute_importance_divergence(shap_imp, perm_imp, mi)
+    assert divergence[3] > divergence[0]
+    assert divergence[0] == pytest.approx(0.0)
+
+
+def test_importance_divergence_regression_task_compatibility(
+    fitted_regression_model,
+):
+    """compute_importance_divergence works with importance arrays produced
+    on a regression task (no classification-specific assumptions)."""
+    model, df, feature_names = fitted_regression_model
+    shap_imp = compute_shap_importance(model, df, feature_names)
+    perm_imp, _ = compute_permutation_importance(
+        model=model,
+        data=df,
+        target_column="target",
+        feature_names=feature_names,
+        metric_fn=lambda y_true, y_pred: -np.mean((y_true - y_pred) ** 2),
+    )
+    mi = compute_mutual_information(
+        df, "target", feature_names, task="regression", random_seed=42
+    )
+    divergence = compute_importance_divergence(shap_imp, perm_imp, mi)
+    assert divergence.shape == (len(feature_names),)
+    assert (divergence >= 0).all()
+    assert (divergence <= 1).all()
+
+
+def test_importance_divergence_shape_mismatch_raises():
+    """Mismatched shapes raise ValueError."""
+    shap_imp = np.array([0.1, 0.2, 0.3])
+    perm_imp = np.array([0.1, 0.2])
+    mi = np.array([0.1, 0.2, 0.3])
+    with pytest.raises(ValueError, match="must have the same shape"):
+        compute_importance_divergence(shap_imp, perm_imp, mi)
+
+
+def test_importance_divergence_single_feature_is_zero():
+    """With fewer than 2 features, divergence is undefined and returns 0."""
+    divergence = compute_importance_divergence(
+        np.array([0.5]), np.array([0.3]), np.array([0.1])
+    )
+    np.testing.assert_array_almost_equal(divergence, np.zeros(1))

@@ -181,6 +181,68 @@ def compute_shap_interactions(
     return result.head(top_n)
 
 
+def compute_importance_divergence(
+    shap_importance: np.ndarray,
+    perm_importance: np.ndarray,
+    mi_score: np.ndarray,
+) -> np.ndarray:
+    """
+    Score per-feature disagreement across SHAP, permutation, and MI rankings.
+
+    Each feature is ranked independently under each of the three signals
+    (0=most important, n-1=least important), and the divergence score is
+    the variance of a feature's three ranks normalized by the maximum
+    possible rank variance ((n-1)^2 / 4, the variance of two ranks pinned
+    to the extremes with the third anywhere), clipped to [0, 1] -- 0 means
+    all three signals agree on a feature's rank, 1 means maximum spread.
+
+    With fewer than 2 features, divergence is undefined (no rank spread is
+    possible); this returns all zeros in that case.
+
+    Args:
+        shap_importance: Array of shape (n_features,), mean absolute SHAP
+            values per feature (e.g. from compute_shap_importance).
+        perm_importance: Array of shape (n_features,), permutation
+            importance per feature (e.g. from compute_permutation_importance).
+        mi_score: Array of shape (n_features,), mutual information score per
+            feature (e.g. from compute_mutual_information).
+
+    Returns:
+        Array of shape (n_features,) with divergence scores in [0, 1].
+    """
+    shap_importance = np.asarray(shap_importance)
+    perm_importance = np.asarray(perm_importance)
+    mi_score = np.asarray(mi_score)
+
+    if not (shap_importance.shape == perm_importance.shape == mi_score.shape):
+        raise ValueError(
+            "shap_importance, perm_importance, and mi_score must have the"
+            f" same shape; got {shap_importance.shape}, {perm_importance.shape},"
+            f" {mi_score.shape}"
+        )
+
+    n_features = shap_importance.shape[0]
+    if n_features < 2:
+        return np.zeros(n_features)
+
+    # Higher importance = better, so rank descending (argsort of -values).
+    # argsort of argsort gives each element's rank (0=best) in one pass.
+    shap_ranks = np.argsort(np.argsort(-shap_importance))
+    perm_ranks = np.argsort(np.argsort(-perm_importance))
+    mi_ranks = np.argsort(np.argsort(-mi_score))
+
+    ranks = np.stack([shap_ranks, perm_ranks, mi_ranks], axis=0).astype(np.float64)
+    rank_variance = ranks.var(axis=0)
+
+    max_rank = n_features - 1
+    max_variance = (max_rank**2) / 4.0
+    if max_variance == 0:
+        return np.zeros(n_features)
+
+    divergence = rank_variance / max_variance
+    return np.clip(divergence, 0.0, 1.0)
+
+
 def _get_predictions(
     model: Any, X: pd.DataFrame, use_predict_proba: bool
 ) -> np.ndarray:
