@@ -252,6 +252,10 @@ class Config:
     behavior is unchanged from prior versions. The time_column must exist
     in the input data and must contain sortable (numeric or datetime)
     values."""
+    use_boruta: bool = False
+    """If True, run Boruta feature selection and add a boruta_decision
+    column ('Confirmed', 'Tentative', or 'Rejected') to the results DataFrame.
+    Off by default."""
 
     def __post_init__(self) -> None:
         """Validate configuration values."""

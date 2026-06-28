@@ -319,6 +319,11 @@ def parse_arguments() -> argparse.Namespace:
         " disagree about a feature's rank (0=consensus, 1=max disagreement)."
         " Off by default.",
     )
+    parser.add_argument(
+        "--use-boruta",
+        action="store_true",
+        help="Run Boruta feature selection and output boruta_decision column.",
+    )
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging.")
     return parser.parse_args()
 
@@ -403,7 +408,9 @@ def main() -> int:
             train_test_importance_delta_threshold=args.train_test_delta_threshold,
             time_column=args.time_column,
             compute_importance_divergence=args.compute_importance_divergence,
+            use_boruta=args.use_boruta,
         )
+
     except ConfigError as exc:
         logger.error(f"Configuration error: {exc}")
         return 1

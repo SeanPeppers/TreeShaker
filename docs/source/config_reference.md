@@ -88,6 +88,8 @@ See [BootstrapConfig](#bootstrapconfig) below.
 | `compute_shap_interactions` | `--shap-interactions` | bool | `False` | Compute pairwise SHAP interaction values (expensive) |
 | `check_residuals` | `--check-residuals` | bool | `False` | Compute per-feature correlation with model residuals |
 | `residual_config` | — | `ResidualConfig` | defaults | Nested residual diagnostics configuration |
+| `use_boruta` | `--use-boruta` | bool | `False` | Run Boruta feature selection and output `boruta_decision` |
+
 
 See [ResidualConfig](#residualconfig) below.
 

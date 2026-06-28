@@ -44,7 +44,11 @@ mcp = [
 fast = [
     "treeshaker_lsh>=0.1.0",
 ]
+boruta = []
+
+
 docs = [
+
     "sphinx>=7.0.0",
     "furo>=2024.1.0",
     "myst-parser>=1.0.0",

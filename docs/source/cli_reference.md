@@ -106,6 +106,8 @@ treeshaker --input <file> --target <column> --task <type> [options]
 | `--shap-interactions` | off | Compute pairwise SHAP interaction values (expensive) |
 | `--check-residuals` | off | Compute per-feature correlation with model residuals |
 | `--residual-corr-threshold FLOAT` | `0.3` | Flag if \|residual correlation\| ≥ this (only with `--check-residuals`) |
+| `--use-boruta` | off | Run Boruta feature selection and add `boruta_decision` column |
+
 
 ## Feature synthesis (opt-in)
 

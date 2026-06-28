@@ -2267,7 +2267,7 @@ requires-dist = [
     { name = "treeshaker-lsh", marker = "extra == 'fast'", directory = "rust/treeshaker_lsh" },
     { name = "xgboost", specifier = ">=2.0.0" },
 ]
-provides-extras = ["dev", "demo", "mcp", "fast", "docs"]
+provides-extras = ["dev", "demo", "mcp", "fast", "boruta", "docs"]
 
 [[package]]
 name = "treeshaker-lsh"

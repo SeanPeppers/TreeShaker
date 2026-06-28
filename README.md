@@ -15,6 +15,7 @@ Most feature-importance tools give you a single number per feature from a single
 - **Stability, not just a point estimate** — permutation importance is averaged over multiple shuffles, and an opt-in bootstrap ensemble shows whether a feature's rank holds up.
 - **Plain-English explanations** — each feature gets a Drop/Caution/Keep recommendation with clear reasoning.
 - **Cross-checked, not single-signal** — SHAP, permutation importance, mutual information, leakage statistics, and residual correlation are all computed independently. An opt-in importance divergence score (`compute_importance_divergence` / `--compute-importance-divergence`) flags features where these signals disagree about a feature's rank.
+- **Boruta feature selection** — opt-in feature selection with `--use-boruta` (`use_boruta=True`), adding a `boruta_decision` column (`Confirmed`, `Tentative`, or `Rejected`).
 
 ## Quick start
 
@@ -23,6 +24,7 @@ Most feature-importance tools give you a single number per feature from a single
 pip install treeshaker
 treeshaker --input data.csv --target price --task regression
 ```
+
 
 **Python API:**
 ```python

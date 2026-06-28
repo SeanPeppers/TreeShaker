@@ -91,8 +91,74 @@ def _make_xgb_model(task: str, params: dict) -> Any:
 
     if task in ("binary", "multiclass"):
         objective_str = "binary:logistic" if task == "binary" else "multi:softprob"
-        return xgb.XGBClassifier(objective=objective_str, **params)
+        p = params.copy()
+        p.setdefault("objective", objective_str)
+        return xgb.XGBClassifier(**p)
     return xgb.XGBRegressor(**params)
+
+
+def run_boruta_shap(
+    model: Any,
+    data: pd.DataFrame,
+    target_column: str,
+    feature_names: list[str],
+    task: str,
+    random_seed: int = 42,
+    n_iterations: int = 20,
+) -> list[str]:
+    """Run Boruta feature selection and return decisions per feature."""
+    from scipy.stats import binomtest
+
+    if not feature_names:
+        return []
+
+    X = data[feature_names].copy()
+    y = data[target_column]
+    n_features = len(feature_names)
+    hits = np.zeros(n_features, dtype=int)
+
+    base_params = model.get_params()
+
+    for i in range(n_iterations):
+        iter_seed = random_seed + i
+        rng = np.random.default_rng(iter_seed)
+
+        X_shadow = pd.DataFrame(index=X.index)
+        for col in feature_names:
+            X_shadow[f"_shadow_{col}"] = pd.Series(
+                rng.permutation(np.asarray(X[col].values)),
+                index=X.index,
+                dtype=X[col].dtype,
+            )
+
+        X_combined = pd.concat([X, X_shadow], axis=1)
+
+        iter_params = {**base_params, "random_state": iter_seed}
+        iter_model = _make_xgb_model(task, iter_params)
+        iter_model.fit(X_combined, y)
+
+        importances = iter_model.feature_importances_
+        real_importances = importances[:n_features]
+        shadow_importances = importances[n_features:]
+
+        max_shadow_importance = (
+            float(np.max(shadow_importances)) if len(shadow_importances) > 0 else 0.0
+        )
+
+        hits += (real_importances > max_shadow_importance).astype(int)
+
+    decisions = []
+    for h in hits:
+        res = binomtest(int(h), n_iterations, 0.5)
+        hit_rate = h / n_iterations
+        if res.pvalue < 0.05 and hit_rate > 0.5:
+            decisions.append("Confirmed")
+        elif res.pvalue < 0.05 and hit_rate < 0.5:
+            decisions.append("Rejected")
+        else:
+            decisions.append("Tentative")
+
+    return decisions
 
 
 def derive_prefix_groups(feature_names: list[str]) -> dict[str, list[str]]:
@@ -822,6 +888,16 @@ class FeatureSelectionPipeline:
                 shap_importance=shap_importance,
                 perm_importance=perm_importance,
                 mi_score=mi_score,
+            )
+
+        if self.config.use_boruta:
+            result_columns["boruta_decision"] = run_boruta_shap(
+                model=self.model,
+                data=self.test_data,
+                target_column=self.config.target_column,
+                feature_names=self.feature_names,
+                task=self.config.task,
+                random_seed=self.config.random_seed,
             )
 
         self.results = (
