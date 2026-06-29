@@ -51,17 +51,17 @@ print(results)
 
 ## Documentation
 
-Complete documentation is at [https://treeshaker.readthedocs.io](https://treeshaker.readthedocs.io/), including:
+This repo is private, so docs aren't hosted (Read the Docs / GitHub Pages free tiers require a public repo). Source docs live in `docs/source/`, including:
 
-- [Installation guide](https://treeshaker.readthedocs.io/en/latest/installation.html)
-- [How it works](https://treeshaker.readthedocs.io/en/latest/how_it_works.html)
-- [Feature importance methods](https://treeshaker.readthedocs.io/en/latest/importance_methods.html)
-- [Leakage detection](https://treeshaker.readthedocs.io/en/latest/leakage_detection.html)
-- [Configuration reference](https://treeshaker.readthedocs.io/en/latest/config_reference.html)
-- [CLI reference](https://treeshaker.readthedocs.io/en/latest/cli_reference.html)
-- [MCP server setup](https://treeshaker.readthedocs.io/en/latest/mcp_server.html)
+- [Installation guide](docs/source/installation.md)
+- [How it works](docs/source/how_it_works.md)
+- [Feature importance methods](docs/source/importance_methods.md)
+- [Leakage detection](docs/source/leakage_detection.md)
+- [Configuration reference](docs/source/config_reference.md)
+- [CLI reference](docs/source/cli_reference.md)
+- [MCP server setup](docs/source/mcp_server.md)
 
-Or build locally:
+Build a browsable HTML site locally:
 ```bash
 pip install "treeshaker[docs]"
 sphinx-build docs/source docs/_build
@@ -83,7 +83,7 @@ mypy
 pytest
 ```
 
-See [Contributing](https://treeshaker.readthedocs.io/en/latest/contributing.html) for details.
+See [Contributing](docs/source/contributing.md) for details.
 
 ## License
 
