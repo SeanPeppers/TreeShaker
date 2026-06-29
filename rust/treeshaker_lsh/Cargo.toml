@@ -10,11 +10,11 @@ name = "treeshaker_lsh"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.22", features = ["extension-module"] }
-numpy = "0.22"
-rand = "0.8"
+pyo3 = { version = "0.29", features = ["extension-module"] }
+numpy = "0.29"
+rand = "0.10"
 rand_chacha = "0.3"
-rand_distr = "0.4"
+rand_distr = "0.6"
 
 [profile.release]
 lto = true
