@@ -6,18 +6,28 @@ on:
   pull_request:
     branches: [main]
 
+permissions: {}
+
 jobs:
   ruff:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2
+        with:
+          egress-policy: audit
 
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.13"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3
 
       - name: Install dependencies (pinned via uv.lock)
         run: uv sync --locked --extra dev --extra demo --extra mcp
@@ -30,10 +40,18 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2
+        with:
+          egress-policy: audit
 
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.13"
 
@@ -43,12 +61,27 @@ jobs:
       - name: Run pytest
         run: pytest
 
+      - name: Upload coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
   mypy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2
+        with:
+          egress-policy: audit
 
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.13"
 
@@ -61,20 +94,28 @@ jobs:
   doc-sync:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Check README/MCP docs updated alongside API changes
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
           if [[ "$PR_TITLE" == *"[skip-doc-check]"* ]]; then
             echo "Skipping doc-sync check (opted out via PR title)."
             exit 0
           fi
-          changed=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          changed=$(git diff --name-only "origin/$BASE_REF...HEAD")
           api_changed=$(echo "$changed" | grep -E '^src/treeshaker/(config|pipeline|cli)\.py$' || true)
           docs_changed=$(echo "$changed" | grep -E '^(README\.md|src/treeshaker/mcp_server\.py)$' || true)
           if [[ -n "$api_changed" && -z "$docs_changed" ]]; then
@@ -93,20 +134,33 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - uses: gitleaks/gitleaks-action@v3
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   pip-audit:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2
+        with:
+          egress-policy: audit
 
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.13"
 
@@ -121,3 +175,41 @@ jobs:
 
       - name: Run pip-audit
         run: pip-audit
+
+  # dependency-review-action requires GitHub Advanced Security's dependency
+  # graph, which isn't available on a private repo without a paid plan -
+  # it hard-fails with "not supported on this repository" otherwise.
+  # Re-add this job if the repo goes public or GHAS gets enabled.
+
+  zizmor:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa # v0.5.7
+        with:
+          # Uploading SARIF to the Security tab also needs GitHub Advanced
+          # Security. Without this, zizmor still fails the job directly on
+          # findings - it just doesn't get a Security tab entry too.
+          advanced-security: "false"
+
+  labeler:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2
+        with:
+          egress-policy: audit
+
+      - uses: actions/labeler@8558fd74291d67161a8a78ce36a881fa63b766a9 # v5
