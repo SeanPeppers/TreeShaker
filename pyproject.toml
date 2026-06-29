@@ -53,6 +53,9 @@ lightgbm = [
 catboost = [
     "catboost>=1.2.0",
 ]
+mlflow = [
+    "mlflow>=2.0.0",
+]
 docs = [
 
     "sphinx>=7.0.0",

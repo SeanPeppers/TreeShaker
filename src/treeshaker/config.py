@@ -295,6 +295,19 @@ class Config:
     """Fraction of rows to sample when large_dataset_sample_threshold is exceeded.
     Default 0.5 (50%). Must be in (0, 1]."""
 
+    use_mlflow: bool = False
+    """If True, log this run to MLflow for experiment tracking: Config
+    parameters actually used, per-feature importance/metric columns from
+    the results DataFrame, and the final results table as a CSV artifact.
+    Off by default. Requires the optional 'mlflow' package (install with
+    pip install treeshaker[mlflow]); raises ImportError with install
+    instructions if missing while this flag is True. Does not affect
+    feature selection in any way -- logging only."""
+
+    mlflow_experiment_name: str = "treeshaker"
+    """MLflow experiment name to log runs under when use_mlflow=True.
+    Ignored otherwise. Default "treeshaker"."""
+
     def __post_init__(self) -> None:
         """Validate configuration values."""
         if self.use_gpu and not detect_cuda_available():
