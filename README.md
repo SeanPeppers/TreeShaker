@@ -24,6 +24,7 @@ Most feature-importance tools give you a single number per feature from a single
 - **GPU acceleration** — opt-in GPU support with `--use-gpu` (`use_gpu=True`), configuring XGBoost models with CUDA execution (`device="cuda"`).
 - **Optuna pruning & early stopping** — opt-in trial pruning with `--use-optuna-pruning` (`use_optuna_pruning=True`), using Optuna's MedianPruner and early stopping during hyperparameter search to skip unpromising trials and reduce tuning runtime.
 - **Large-dataset auto-stratified sampling** — opt-in sampling with `--large-dataset-sample-threshold` and `--large-dataset-sample-frac`, applying stratified sampling (for classification tasks) prior to train/val/test splitting when row counts exceed the threshold.
+- **HTML report** — pass `--format html` (or an `output_path` ending in `.html` via MCP) for a report with a color-coded Keep/Caution/Drop table and an embedded SHAP importance chart, instead of a plain CSV.
 
 ## Quick start
 

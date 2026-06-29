@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -461,6 +462,85 @@ def derive_output_stem(output_file: str) -> str:
     return os.path.splitext(output_file)[0]
 
 
+#: CSS background color per recommendation tier, shared by the row
+#: highlighting and the importance chart's bar colors so the two stay
+#: visually consistent.
+_RECOMMENDATION_COLORS = {
+    "Keep": "#d4edda",
+    "Caution": "#fff3cd",
+    "Drop": "#f8d7da",
+}
+
+_RECOMMENDATION_CHART_COLORS = {
+    "Keep": "#28a745",
+    "Caution": "#ffc107",
+    "Drop": "#dc3545",
+}
+
+
+def _render_importance_chart(results: pd.DataFrame) -> str | None:
+    """Render a horizontal bar chart of SHAP importance, color-coded by
+    recommendation tier, as a base64-encoded PNG `<img>` tag.
+
+    Returns None (rather than raising) if matplotlib is unavailable or the
+    results have no shap_importance column, since the chart is a visual
+    nice-to-have and a missing/broken chart shouldn't block report
+    generation.
+    """
+    if "shap_importance" not in results.columns or results.empty:
+        return None
+    try:
+        import base64
+        from io import BytesIO
+
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        return None
+
+    ordered = results.sort_values("shap_importance", ascending=True)
+    colors = [
+        _RECOMMENDATION_CHART_COLORS.get(rec, "#6c757d")
+        for rec in ordered.get("recommendation", pd.Series(["Keep"] * len(ordered)))
+    ]
+    fig_height = max(2.0, 0.35 * len(ordered))
+    fig, ax = plt.subplots(figsize=(8, fig_height))
+    ax.barh(ordered["feature_name"], ordered["shap_importance"], color=colors)
+    ax.set_xlabel("SHAP importance")
+    ax.set_title("Feature importance by recommendation")
+    fig.tight_layout()
+
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=100)
+    plt.close(fig)
+    encoded = base64.b64encode(buf.getvalue()).decode("ascii")
+    return f'<img alt="Feature importance chart" src="data:image/png;base64,{encoded}">'
+
+
+def _highlight_recommendation_rows(table_html: str) -> str:
+    """Color each `<tr>` in a pandas-rendered table by its Keep/Caution/Drop
+    recommendation cell, without altering or re-escaping any cell content.
+
+    Operates on already-escaped HTML (`DataFrame.to_html(escape=True)`), so
+    this only ever matches the literal, known-safe recommendation strings —
+    it never interprets feature names, reasons, or other user-derived data
+    as HTML. The recommendation column's position varies (it's not always
+    first), so each `<tr>...</tr>` block is searched as a whole rather than
+    assuming the marker immediately follows the opening tag.
+    """
+
+    def _color_row(match: re.Match[str]) -> str:
+        row = match.group(0)
+        for recommendation, color in _RECOMMENDATION_COLORS.items():
+            if f"<td>{recommendation}</td>" in row:
+                return row.replace("<tr>", f'<tr style="background-color: {color}">', 1)
+        return row
+
+    return re.sub(r"<tr>.*?</tr>", _color_row, table_html, flags=re.DOTALL)
+
+
 def save_results(
     results: pd.DataFrame, output_file: str, output_format: str = "csv"
 ) -> None:
@@ -480,19 +560,26 @@ def save_results(
         results.to_csv(output_file, index=False)
         logger.info(f"Results saved to {output_file}")
     elif output_format == "html":
-        n_drop = (results["recommendation"] == "Drop").sum()
         n_total = len(results)
+        counts = results["recommendation"].value_counts()
         summary = (
-            f"<p><strong>Total features:</strong> {n_total} | "
-            f"<strong>Recommended to drop:</strong> {n_drop}</p>"
+            f"<p><strong>Total features:</strong> {n_total} &nbsp;|&nbsp; "
+            f"<strong style='color:#28a745'>Keep:</strong> {counts.get('Keep', 0)} "
+            f"&nbsp;|&nbsp; <strong style='color:#cc9a06'>Caution:</strong>"
+            f" {counts.get('Caution', 0)} &nbsp;|&nbsp;"
+            f" <strong style='color:#dc3545'>Drop:</strong> {counts.get('Drop', 0)}</p>"
         )
-        table = results.to_html(index=False, escape=False)
+        chart_img = _render_importance_chart(results)
+        chart_html = f"<h2>Importance chart</h2>{chart_img}" if chart_img else ""
+        table = _highlight_recommendation_rows(results.to_html(index=False))
         html = f"""<!DOCTYPE html>
 <html>
 <head><title>TreeShaker Feature Selection Report</title></head>
 <body>
 <h1>TreeShaker Feature Selection Report</h1>
 {summary}
+{chart_html}
+<h2>Feature details</h2>
 {table}
 </body>
 </html>"""

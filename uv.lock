@@ -2498,6 +2498,7 @@ name = "treeshaker"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "matplotlib" },
     { name = "numpy" },
     { name = "optuna" },
     { name = "pandas" },
@@ -2540,6 +2541,7 @@ requires-dist = [
     { name = "furo", marker = "extra == 'docs'", specifier = ">=2024.1.0" },
     { name = "gradio", marker = "extra == 'demo'", specifier = ">=4.0.0" },
     { name = "lightgbm", marker = "extra == 'lightgbm'", specifier = ">=4.0.0" },
+    { name = "matplotlib", specifier = ">=3.7.0" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.0.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.8.0" },
     { name = "myst-parser", marker = "extra == 'docs'", specifier = ">=1.0.0" },

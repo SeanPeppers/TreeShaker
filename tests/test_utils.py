@@ -12,6 +12,7 @@ from treeshaker.utils import (
     get_metric_fn,
     load_csv,
     resolve_xgboost_device,
+    save_results,
     validate_target,
 )
 
@@ -365,3 +366,57 @@ def test_load_csv_three_way_split_stratification_multiclass(tmp_path):
         counts = split["target"].value_counts(normalize=True)
         for frac in counts:
             assert frac == pytest.approx(1 / 3, abs=0.05)
+
+
+def _sample_results_df() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "feature_name": ["a", "b", "c"],
+            "shap_importance": [0.5, 0.3, 0.1],
+            "recommendation": ["Keep", "Caution", "Drop"],
+            "reason": ["", "borderline", "leaky <script>alert(1)</script>"],
+        }
+    )
+
+
+def test_save_results_html_escapes_cell_content(tmp_path):
+    output = tmp_path / "report.html"
+    save_results(_sample_results_df(), str(output), "html")
+    content = output.read_text()
+    assert "<script>alert(1)</script>" not in content
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in content
+
+
+def test_save_results_html_colors_rows_by_recommendation(tmp_path):
+    output = tmp_path / "report.html"
+    save_results(_sample_results_df(), str(output), "html")
+    content = output.read_text()
+    assert '<tr style="background-color: #d4edda">' in content
+    assert '<tr style="background-color: #fff3cd">' in content
+    assert '<tr style="background-color: #f8d7da">' in content
+
+
+def test_save_results_html_embeds_importance_chart(tmp_path):
+    output = tmp_path / "report.html"
+    save_results(_sample_results_df(), str(output), "html")
+    content = output.read_text()
+    assert "data:image/png;base64," in content
+
+
+def test_save_results_html_summary_counts(tmp_path):
+    output = tmp_path / "report.html"
+    save_results(_sample_results_df(), str(output), "html")
+    content = output.read_text()
+    assert "Keep:</strong> 1" in content
+    assert "Caution:</strong> 1" in content
+    assert "Drop:</strong> 1" in content
+
+
+def test_save_results_html_handles_empty_results(tmp_path):
+    output = tmp_path / "report.html"
+    empty = pd.DataFrame(
+        columns=["feature_name", "shap_importance", "recommendation", "reason"]
+    )
+    save_results(empty, str(output), "html")
+    content = output.read_text()
+    assert "<table" in content

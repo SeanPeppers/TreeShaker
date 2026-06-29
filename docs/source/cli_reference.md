@@ -21,7 +21,7 @@ treeshaker --input <file> --target <column> --task <type> [options]
 | Argument | Default | Description |
 |---|---|---|---|
 | `--output FILE` | `treeshaker_results.csv` | Output file path |
-| `--format FORMAT` | `csv` | Output format: `csv` or `html` |
+| `--format FORMAT` | `csv` | Output format: `csv`, or `html` for a report with a color-coded Keep/Caution/Drop table and an embedded SHAP importance chart |
 
 ## Data splits
 
