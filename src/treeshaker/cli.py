@@ -365,6 +365,20 @@ def parse_arguments() -> argparse.Namespace:
         " hyperparameter tuning.",
     )
     parser.add_argument(
+        "--use-mlflow",
+        action="store_true",
+        help="Log this run to MLflow for experiment tracking: Config"
+        " parameters, per-feature importance/metric columns, and the"
+        " results table as a CSV artifact. Requires the optional 'mlflow'"
+        " package (pip install treeshaker[mlflow]).",
+    )
+    parser.add_argument(
+        "--mlflow-experiment-name",
+        default="treeshaker",
+        help="MLflow experiment name to log runs under. Only used when"
+        " --use-mlflow is set. (default: treeshaker)",
+    )
+    parser.add_argument(
         "--large-dataset-sample-threshold",
         type=int,
         default=None,
@@ -474,6 +488,8 @@ def main() -> int:
             use_optuna_pruning=args.use_optuna_pruning,
             large_dataset_sample_threshold=args.large_dataset_sample_threshold,
             large_dataset_sample_frac=args.large_dataset_sample_frac,
+            use_mlflow=args.use_mlflow,
+            mlflow_experiment_name=args.mlflow_experiment_name,
         )
 
     except ConfigError as exc:

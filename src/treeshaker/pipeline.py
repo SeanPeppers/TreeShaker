@@ -1,5 +1,6 @@
 """Core feature selection pipeline orchestration."""
 
+import dataclasses
 import logging
 from collections import defaultdict
 from typing import Any
@@ -349,6 +350,75 @@ def run_sklearn_permutation_importance(
         n_jobs=1,
     )
     return [float(i) for i in res.importances_mean]
+
+
+def log_run_to_mlflow(
+    config: Config,
+    results: pd.DataFrame,
+    experiment_name: str = "treeshaker",
+) -> None:
+    """Log a completed TreeShaker run to MLflow for experiment tracking.
+
+    Logs three things under a single MLflow run:
+      - Parameters: the flat (non-nested-dataclass) Config fields that were
+        actually used for this run, e.g. task, test_size, shap_importance_threshold,
+        the use_* feature toggles, etc.
+      - Metrics: per-feature importance/score columns already computed by the
+        pipeline (e.g. shap_importance, permutation_importance, any opt-in
+        columns like lightgbm_importance), logged as "<column>__<feature_name>"
+        so every feature's value for each metric column is tracked individually.
+      - Artifact: the full results DataFrame, saved as a CSV and uploaded.
+
+    Args:
+        config: The Config used for this run.
+        results: The pipeline's final results DataFrame (one row per feature).
+        experiment_name: MLflow experiment name to log the run under.
+
+    Raises:
+        ImportError: If the optional 'mlflow' package is not installed.
+    """
+    try:
+        import mlflow
+    except ImportError as err:
+        raise ImportError(
+            "The 'mlflow' package is required when use_mlflow=True."
+            " Install it with: pip install mlflow"
+        ) from err
+
+    import tempfile
+    from pathlib import Path
+
+    # Only log flat, scalar Config fields as params -- nested dataclass
+    # fields (optuna_config, xgboost_config, leakage_config, etc.) aren't
+    # MLflow-param-friendly (not strings/numbers/bools) and are skipped here
+    # rather than flattened, keeping this additive and simple.
+    params = {
+        f.name: getattr(config, f.name)
+        for f in dataclasses.fields(config)
+        if not dataclasses.is_dataclass(getattr(config, f.name))
+    }
+
+    numeric_columns = [
+        col
+        for col in results.columns
+        if pd.api.types.is_numeric_dtype(results[col]) and col != "feature_name"
+    ]
+
+    mlflow.set_experiment(experiment_name)
+    with mlflow.start_run():
+        mlflow.log_params(params)
+
+        if "feature_name" in results.columns:
+            for col in numeric_columns:
+                for feature_name, value in zip(
+                    results["feature_name"], results[col], strict=True
+                ):
+                    mlflow.log_metric(f"{col}__{feature_name}", float(value))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            results_path = Path(tmpdir) / "results.csv"
+            results.to_csv(results_path, index=False)
+            mlflow.log_artifact(str(results_path))
 
 
 def derive_prefix_groups(feature_names: list[str]) -> dict[str, list[str]]:
@@ -1249,6 +1319,17 @@ class FeatureSelectionPipeline:
                 " compute_shap_interactions is False; skipping synthetic"
                 " feature suggestion. Set compute_shap_interactions=True to"
                 " enable it."
+            )
+
+        if self.config.use_mlflow:
+            log_run_to_mlflow(
+                config=self.config,
+                results=self.results,
+                experiment_name=self.config.mlflow_experiment_name,
+            )
+            self.logger.info(
+                "Run logged to MLflow experiment"
+                f" '{self.config.mlflow_experiment_name}'."
             )
 
         n_drop = (self.results["recommendation"] == "Drop").sum()

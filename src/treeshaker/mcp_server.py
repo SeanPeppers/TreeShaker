@@ -72,6 +72,8 @@ def _build_config(
     use_optuna_pruning: bool = False,
     large_dataset_sample_threshold: int | None = None,
     large_dataset_sample_frac: float = 0.5,
+    use_mlflow: bool = False,
+    mlflow_experiment_name: str = "treeshaker",
     config_overrides: dict | None = None,
 ) -> Config:
     """Build a Config from run_pipeline's explicit kwargs plus generic overrides.
@@ -125,6 +127,8 @@ def _build_config(
         "use_optuna_pruning": use_optuna_pruning,
         "large_dataset_sample_threshold": large_dataset_sample_threshold,
         "large_dataset_sample_frac": large_dataset_sample_frac,
+        "use_mlflow": use_mlflow,
+        "mlflow_experiment_name": mlflow_experiment_name,
     }
 
     if config_overrides:
@@ -168,6 +172,8 @@ def run_pipeline(
     use_optuna_pruning: bool = False,
     large_dataset_sample_threshold: int | None = None,
     large_dataset_sample_frac: float = 0.5,
+    use_mlflow: bool = False,
+    mlflow_experiment_name: str = "treeshaker",
     config_overrides: dict | None = None,
 ) -> dict:
     """Run the full TreeShaker feature selection pipeline end to end.
@@ -207,6 +213,10 @@ def run_pipeline(
         use_optuna_pruning: Enable Optuna trial pruning and early stopping (opt-in).
         large_dataset_sample_threshold: Optional row count threshold for sampling.
         large_dataset_sample_frac: Fraction of rows to sample if threshold exceeded.
+        use_mlflow: Log this run to MLflow for experiment tracking (opt-in).
+            Requires the optional 'mlflow' package.
+        mlflow_experiment_name: MLflow experiment name to log under. Only
+            used when use_mlflow is True.
         config_overrides: Optional dict of additional Config field overrides
             (e.g. {"shap_importance_threshold": 0.02}) for anything not
             covered by the explicit kwargs above.
@@ -247,6 +257,8 @@ def run_pipeline(
             use_optuna_pruning=use_optuna_pruning,
             large_dataset_sample_threshold=large_dataset_sample_threshold,
             large_dataset_sample_frac=large_dataset_sample_frac,
+            use_mlflow=use_mlflow,
+            mlflow_experiment_name=mlflow_experiment_name,
             config_overrides=config_overrides,
         )
 
