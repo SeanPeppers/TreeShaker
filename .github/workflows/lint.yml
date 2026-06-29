@@ -141,16 +141,10 @@ jobs:
       - name: Run pip-audit
         run: pip-audit
 
-  dependency-review:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
-      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4
+  # dependency-review-action requires GitHub Advanced Security's dependency
+  # graph, which isn't available on a private repo without a paid plan -
+  # it hard-fails with "not supported on this repository" otherwise.
+  # Re-add this job if the repo goes public or GHAS gets enabled.
 
   zizmor:
     runs-on: ubuntu-latest
@@ -160,6 +154,11 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa # v0.5.7
+        with:
+          # Uploading SARIF to the Security tab also needs GitHub Advanced
+          # Security. Without this, zizmor still fails the job directly on
+          # findings - it just doesn't get a Security tab entry too.
+          advanced-security: "false"
 
   labeler:
     runs-on: ubuntu-latest
