@@ -82,7 +82,9 @@ target-version = "py313"
 line-length = 88
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I"]
+select = ["E", "F", "W", "I", "B", "S"]
+# Test asserts and fixture data aren't a security concern.
+per-file-ignores = { "tests/**" = ["S101", "S105", "S106"] }
 
 
 [tool.pytest.ini_options]

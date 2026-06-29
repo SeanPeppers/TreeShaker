@@ -221,11 +221,11 @@ def run_lightgbm_importance(
     """Fit LightGBM model and return normalized feature importances."""
     try:
         import lightgbm as lgb
-    except ImportError:
+    except ImportError as err:
         raise ImportError(
             "The 'lightgbm' package is required when use_lightgbm=True."
             " Install it with: pip install lightgbm"
-        )
+        ) from err
 
     X = data[feature_names]
     y = data[target_column]
@@ -253,11 +253,11 @@ def run_catboost_importance(
     """Fit CatBoost model with native categorical handling and return importances."""
     try:
         import catboost as cb
-    except ImportError:
+    except ImportError as err:
         raise ImportError(
             "The 'catboost' package is required when use_catboost=True."
             " Install it with: pip install catboost"
-        )
+        ) from err
 
     X = data[feature_names].copy()
     y = data[target_column]
@@ -755,7 +755,7 @@ class FeatureSelectionPipeline:
         updated_recommendations = list(recommendations)
         updated_reasons = list(reasons)
 
-        for i, feature in enumerate(self.feature_names):
+        for i, _feature in enumerate(self.feature_names):
             # Avoid division by zero: if mean SHAP is zero, CV is undefined.
             # In that case, the feature is already demoted by harm detection,
             # so we skip stability gating (no need to demote further).
