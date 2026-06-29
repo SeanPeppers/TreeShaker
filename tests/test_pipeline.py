@@ -638,7 +638,7 @@ def test_bootstrap_stability_gating_without_bootstrap_noop(binary_csv, tmp_path)
     config = make_fast_config(binary_csv, "binary", tmp_path)
     # Disable bootstrap and set threshold
     config.bootstrap_config.n_bootstrap = 0
-    setattr(config.bootstrap_config, "shap_importance_stability_threshold", 0.5)
+    config.bootstrap_config.shap_importance_stability_threshold = 0.5
     results = FeatureSelectionPipeline(config).run()
     # No bootstrap columns since bootstrap is disabled
     assert "shap_importance_mean" not in results.columns
