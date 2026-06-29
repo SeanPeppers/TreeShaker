@@ -58,6 +58,49 @@ jobs:
       - name: Type check with mypy
         run: mypy src/
 
+  doc-sync:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check README/MCP docs updated alongside API changes
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if [[ "$PR_TITLE" == *"[skip-doc-check]"* ]]; then
+            echo "Skipping doc-sync check (opted out via PR title)."
+            exit 0
+          fi
+          changed=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          api_changed=$(echo "$changed" | grep -E '^src/treeshaker/(config|pipeline|cli)\.py$' || true)
+          docs_changed=$(echo "$changed" | grep -E '^(README\.md|src/treeshaker/mcp_server\.py)$' || true)
+          if [[ -n "$api_changed" && -z "$docs_changed" ]]; then
+            echo "Changed files that can affect the public API/CLI:"
+            echo "$api_changed"
+            echo
+            echo "README.md and src/treeshaker/mcp_server.py were not updated."
+            echo "Per CLAUDE.md, Config/pipeline public methods/CLI flags must stay in sync with the README and MCP tool schema in the same PR."
+            echo "If this change doesn't affect the public surface, add [skip-doc-check] to the PR title."
+            exit 1
+          fi
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   pip-audit:
     runs-on: ubuntu-latest
     steps:
