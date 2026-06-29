@@ -10,7 +10,7 @@ name = "treeshaker_lsh"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.22", features = ["extension-module"] }
+pyo3 = { version = "0.29", features = ["extension-module"] }
 numpy = "0.22"
 rand = "0.8"
 rand_chacha = "0.3"
