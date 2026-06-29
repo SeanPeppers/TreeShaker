@@ -132,6 +132,23 @@ def test_get_recommendations_missing_file(tmp_path):
     assert "error" in rec
 
 
+def test_get_recommendations_html(binary_csv, tmp_path):
+    output_path = str(tmp_path / "rec_results.html")
+    run_result = run_pipeline(
+        input_path=binary_csv,
+        target_column="target",
+        task="binary",
+        output_path=output_path,
+        skip_tuning=True,
+    )
+    assert "error" not in run_result
+
+    rec = get_recommendations(run_result["output_files"]["results"])
+    assert "error" not in rec
+    assert "features" in rec
+    assert len(rec["features"]) == 10
+
+
 def test_inspect_dataset(binary_csv):
     result = inspect_dataset(binary_csv)
 

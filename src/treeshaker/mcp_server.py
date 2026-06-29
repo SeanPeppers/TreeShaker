@@ -86,6 +86,7 @@ def _build_config(
     output_file = output_path
     if not output_file.lower().endswith((".csv", ".html")):
         output_file = f"{output_path}.csv"
+    output_format = "html" if output_file.lower().endswith(".html") else "csv"
 
     synthetic_config = SyntheticConfig(synthesize_from_interactions=synthesize_features)
     if synthesize_features and not compute_shap_interactions:
@@ -100,6 +101,7 @@ def _build_config(
         "target_column": target_column,
         "task": task,
         "output_file": output_file,
+        "output_format": output_format,
         "check_residuals": check_residuals,
         "compute_shap_interactions": compute_shap_interactions,
         "synthetic_config": synthetic_config,
@@ -174,8 +176,10 @@ def run_pipeline(
         input_path: Path to the input CSV file.
         target_column: Name of the target column.
         task: One of "binary", "multiclass", "regression".
-        output_path: Where to write results. A ".csv" or ".html" extension
-            is appended automatically if missing.
+        output_path: Where to write results. A ".csv" extension is appended
+            automatically if missing. Use a ".html" extension to instead get
+            an HTML report with a color-coded Keep/Caution/Drop table and an
+            embedded SHAP importance chart.
         check_residuals: Compute residual-correlation diagnostics (opt-in).
         compute_shap_interactions: Compute pairwise SHAP interaction values
             (opt-in, expensive).

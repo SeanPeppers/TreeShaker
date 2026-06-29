@@ -67,7 +67,7 @@ Run the full feature selection pipeline end to end.
 | `input_path` | string | Yes | — | Path to input CSV file |
 | `target_column` | string | Yes | — | Name of target column |
 | `task` | string | Yes | — | One of `binary`, `multiclass`, `regression` |
-| `output_path` | string | No | `results` | Where to write results (`.csv` or `.html` appended if missing) |
+| `output_path` | string | No | `results` | Where to write results (`.csv` appended if missing; use a `.html` path for a color-coded report with an embedded SHAP importance chart) |
 | `check_residuals` | boolean | No | `false` | Compute residual-correlation diagnostics |
 | `compute_shap_interactions` | boolean | No | `false` | Compute pairwise SHAP interaction values |
 | `synthesize_features` | boolean | No | `false` | Suggest product features from SHAP interactions |
