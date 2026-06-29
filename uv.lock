@@ -2601,7 +2601,7 @@ mcp = [
 [package.metadata]
 requires-dist = [
     { name = "catboost", marker = "extra == 'catboost'", specifier = ">=1.2.0" },
-    { name = "furo", marker = "extra == 'docs'", specifier = ">=2024.1.0" },
+    { name = "furo", marker = "extra == 'docs'", specifier = ">=2025.12.19" },
     { name = "gradio", marker = "extra == 'demo'", specifier = ">=4.0.0" },
     { name = "lightgbm", marker = "extra == 'lightgbm'", specifier = ">=4.0.0" },
     { name = "lxml", marker = "extra == 'mcp'", specifier = ">=4.9.0" },
