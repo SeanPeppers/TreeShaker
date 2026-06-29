@@ -1,0 +1,28 @@
+area:cli:
+  - changed-files:
+      - any-glob-to-any-file: "src/treeshaker/cli.py"
+
+area:mcp:
+  - changed-files:
+      - any-glob-to-any-file: "src/treeshaker/mcp_server.py"
+
+area:pipeline:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/treeshaker/pipeline.py"
+          - "src/treeshaker/config.py"
+
+area:docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "README.md"
+          - "docs/**"
+
+area:ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/**"
+
+area:tests:
+  - changed-files:
+      - any-glob-to-any-file: "tests/**"
