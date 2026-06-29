@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Open a private [GitHub security advisory](https://github.com/SeanPeppers/TreeShaker/security/advisories/new) rather than a public issue. Include reproduction steps and affected version.
+GitHub's private security advisory flow requires the dependency graph, which isn't available on a private repo without GitHub Advanced Security. Until this repo goes public (see [PRE_PUBLIC_CHECKLIST.md](PRE_PUBLIC_CHECKLIST.md)), email **gagepeppers@gmail.com** instead of filing a public issue. Include reproduction steps and affected version.
 
 ## Dependency scanning
 
