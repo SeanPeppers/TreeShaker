@@ -47,6 +47,7 @@ treeshaker --input <file> --target <column> --task <type> [options]
 | `--target-corr-threshold FLOAT` | `0.95` | Flag numeric features with \|correlation to target\| ≥ this |
 | `--dominant-shap-fraction FLOAT` | `0.7` | Flag if one feature accounts for ≥ this fraction of total SHAP |
 | `--skip-leakage-check` | off | Disable all leakage and logical-error checks |
+| `--leakage-screening MODE` | `exact` | Algorithm for near-duplicate numeric feature screening: `exact` (pairwise correlation, always accurate) or `approximate` (SimHash-based LSH via optional Rust extension, faster on wide data) |
 
 ## Hyperparameter tuning (Optuna)
 
@@ -96,6 +97,7 @@ treeshaker --input <file> --target <column> --task <type> [options]
 |---|---|---|---|
 | `--n-bootstrap INT` | `0` | Number of bootstrap refits (0 = disabled) |
 | `--bootstrap-sample-frac FLOAT` | `1.0` | Fraction of train+val rows per bootstrap sample |
+| `--bootstrap-stability-threshold FLOAT` | `None` | When set and `--n-bootstrap` > 0, gates recommendations on SHAP importance ranking stability (Drop/Keep → Caution if exceeded) |
 
 **Example:** `--n-bootstrap 30` adds `shap_importance_mean` and `shap_importance_std` columns.
 
@@ -112,6 +114,12 @@ treeshaker --input <file> --target <column> --task <type> [options]
 | `--use-catboost` | off | Compute CatBoost feature importances as `catboost_importance` column |
 | `--use-rf-baseline` | off | Compute Random Forest baseline importances as `rf_importance` column |
 | `--use-sklearn-permutation-importance` | off | Compute sklearn permutation importance as `sklearn_permutation_importance` column |
+| `--use-gpu` | off | Enable GPU acceleration for XGBoost (sets device to `cuda`) |
+| `--use-optuna-pruning` | off | Enable Optuna trial pruning and early stopping during hyperparameter tuning |
+| `--flag-leakage-importance-mismatch` | off | Flag features that are high-importance (Keep) but have active leakage warnings |
+| `--compute-train-importance` | off | Compute SHAP importance on train+val in addition to test, to detect train-vs-test gaps |
+| `--train-test-delta-threshold FLOAT` | `None` | When `--compute-train-importance` is set, flag features whose train-vs-test SHAP importance delta exceeds this |
+| `--compute-importance-divergence` | off | Compute a per-feature divergence score across SHAP/permutation/mutual-info rankings |
 
 
 ## Feature synthesis (opt-in)
@@ -134,6 +142,22 @@ treeshaker --input <file> --target <column> --task <type> [options]
 |---|---|---|---|
 | `--shap-sample-size INT` | unset (all rows) | Cap SHAP computation to this many rows; useful on large datasets |
 | `--random-seed INT` | `42` | Random seed for reproducibility |
+| `--large-dataset-sample-threshold INT` | `None` | Row count threshold above which auto-stratified sampling is applied before train/val/test splitting |
+| `--large-dataset-sample-frac FLOAT` | `0.5` | Fraction of rows to sample when row count exceeds the threshold |
+
+## Parallel feature evaluation
+
+| Argument | Default | Description |
+|---|---|---|
+| `--parallel-feature-evaluation` | off | Run the per-feature permutation-importance loop across worker processes instead of sequentially |
+| `--n-jobs INT` | `-1` | Worker thread count when `--parallel-feature-evaluation` is set (-1 = all available cores); ignored otherwise |
+
+## Experiment tracking (opt-in)
+
+| Argument | Default | Description |
+|---|---|---|
+| `--use-mlflow` | off | Log this run to MLflow for experiment tracking (requires the optional `mlflow` package, `pip install treeshaker[mlflow]`) |
+| `--mlflow-experiment-name NAME` | `treeshaker` | MLflow experiment name to log runs under; only used when `--use-mlflow` is set |
 
 ## Miscellaneous
 

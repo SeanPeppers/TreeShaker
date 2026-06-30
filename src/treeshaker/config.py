@@ -330,15 +330,18 @@ class Config:
 
     parallel_feature_evaluation: bool = False
     """If True, run the per-feature permutation-importance loop across
-    worker threads (via joblib) instead of a single sequential Python
-    loop. Speeds up evaluation on datasets with many features. Results
-    are numerically identical to the sequential path (same per-feature
-    random seeds), just computed out of order. Off by default --
-    existing single-threaded behavior is unchanged unless this is
+    worker processes (via joblib's loky backend) instead of a single
+    sequential Python loop. A process backend, not threads, is required
+    here: XGBoost's Booster.predict is not safe to call concurrently from
+    multiple threads on the same fitted model (confirmed via a real-dataset
+    crash on Windows). Speeds up evaluation on datasets with many features.
+    Results are numerically identical to the sequential path (same
+    per-feature random seeds), just computed out of order. Off by default
+    -- existing single-threaded behavior is unchanged unless this is
     explicitly opted into."""
 
     n_jobs: int = -1
-    """Number of worker threads when parallel_feature_evaluation=True,
+    """Number of worker processes when parallel_feature_evaluation=True,
     following joblib/sklearn convention (-1 = use all available cores).
     Ignored when parallel_feature_evaluation=False. Default -1."""
 

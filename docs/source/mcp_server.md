@@ -81,6 +81,20 @@ Run the full feature selection pipeline end to end.
 | `permutation_metric` | string | No | `null` | Override metric (e.g., `roc_auc`, `accuracy`, `neg_mse`, `wape`) |
 | `shap_sample_size` | integer | No | `null` | Cap SHAP to N rows (useful for large datasets) |
 | `group_by_prefix` | boolean | No | `false` | Auto-derive feature groups from prefix |
+| `use_boruta` | boolean | No | `false` | Run Boruta feature selection and add `boruta_decision` column |
+| `use_rfecv` | boolean | No | `false` | Run sklearn RFECV feature selection and add `rfecv_ranking` column |
+| `use_lightgbm` | boolean | No | `false` | Compute LightGBM feature importances as `lightgbm_importance` column |
+| `use_catboost` | boolean | No | `false` | Compute CatBoost feature importances as `catboost_importance` column |
+| `use_rf_baseline` | boolean | No | `false` | Compute Random Forest baseline feature importances as `rf_importance` column |
+| `use_sklearn_permutation_importance` | boolean | No | `false` | Compute sklearn permutation importance on the existing trained model |
+| `use_gpu` | boolean | No | `false` | Enable GPU acceleration for XGBoost (opt-in) |
+| `use_optuna_pruning` | boolean | No | `false` | Enable Optuna trial pruning and early stopping during tuning |
+| `large_dataset_sample_threshold` | integer | No | `null` | Row count threshold above which auto-stratified sampling is applied |
+| `large_dataset_sample_frac` | number | No | `0.5` | Fraction of rows to sample if `large_dataset_sample_threshold` is exceeded |
+| `use_mlflow` | boolean | No | `false` | Log this run to MLflow for experiment tracking (requires the optional `mlflow` package) |
+| `mlflow_experiment_name` | string | No | `treeshaker` | MLflow experiment name to log under; only used when `use_mlflow` is `true` |
+| `parallel_feature_evaluation` | boolean | No | `false` | Run the per-feature permutation-importance loop across worker processes instead of sequentially |
+| `n_jobs` | integer | No | `-1` | Worker thread count when `parallel_feature_evaluation` is `true` (-1 = all cores); ignored otherwise |
 | `config_overrides` | object | No | `null` | Additional Config fields as key-value pairs |
 
 **Returns:** A structured summary including:
@@ -118,7 +132,7 @@ Read back a previously-written results file as structured JSON.
 
 | Argument | Type | Required | Description |
 |---|---|---|---|
-| `results_path` | string | Yes | Path to results CSV or HTML file |
+| `output_path` | string | Yes | Path to results CSV or HTML file |
 
 **Returns:** A list of features with columns:
 - `feature_name`

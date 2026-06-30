@@ -37,6 +37,7 @@ All parameters are optional unless noted. These are settable from the Python API
 |---|---|---|---|---|
 | `leakage_config` | — | `LeakageConfig` | defaults | Nested leakage detection configuration |
 | `skip_leakage_check` | `--skip-leakage-check` | bool | `False` | Disable all leakage/logical-error checks |
+| `leakage_screening` | `--leakage-screening` | str | `exact` | Algorithm for near-duplicate *numeric* feature screening: `exact` (pairwise correlation, always accurate) or `approximate` (SimHash-based LSH via optional Rust extension, faster on wide data). Does not affect categorical proxy-leakage detection. |
 
 See [LeakageConfig](#leakageconfig) below.
 
@@ -94,6 +95,12 @@ See [BootstrapConfig](#bootstrapconfig) below.
 | `use_catboost` | `--use-catboost` | bool | `False` | Compute CatBoost feature importances as `catboost_importance` |
 | `use_rf_baseline` | `--use-rf-baseline` | bool | `False` | Compute Random Forest baseline importances as `rf_importance` |
 | `use_sklearn_permutation_importance` | `--use-sklearn-permutation-importance` | bool | `False` | Compute sklearn permutation importance as `sklearn_permutation_importance` |
+| `use_gpu` | `--use-gpu` | bool | `False` | Configure XGBoost to use GPU acceleration (sets `device` to `cuda`) |
+| `use_optuna_pruning` | `--use-optuna-pruning` | bool | `False` | Enable Optuna trial pruning and early stopping during tuning |
+| `flag_leakage_importance_mismatch` | `--flag-leakage-importance-mismatch` | bool | `False` | Flag features that are high-importance (Keep) but have active leakage warnings |
+| `compute_train_importance` | `--compute-train-importance` | bool | `False` | Compute SHAP importance on train+val in addition to test, to detect train-vs-test gaps |
+| `train_test_importance_delta_threshold` | `--train-test-delta-threshold` | float or None | None | Flag features whose train-vs-test SHAP importance delta exceeds this (requires `compute_train_importance`) |
+| `compute_importance_divergence` | `--compute-importance-divergence` | bool | `False` | Compute a per-feature divergence score across SHAP/permutation/mutual-info rankings |
 
 
 See [ResidualConfig](#residualconfig) below.
@@ -117,6 +124,22 @@ See [SyntheticConfig](#syntheticconfig) below.
 | Parameter | CLI flag | Type | Default | Description |
 |---|---|---|---|---|
 | `shap_sample_size` | `--shap-sample-size` | int or None | None | Cap SHAP computation to this many rows; useful on large datasets |
+| `large_dataset_sample_threshold` | `--large-dataset-sample-threshold` | int or None | None | Row count threshold above which auto-stratified sampling is applied before splitting |
+| `large_dataset_sample_frac` | `--large-dataset-sample-frac` | float | `0.5` | Fraction of rows to sample when `large_dataset_sample_threshold` is exceeded, (0, 1] |
+
+### Parallel feature evaluation
+
+| Parameter | CLI flag | Type | Default | Description |
+|---|---|---|---|---|
+| `parallel_feature_evaluation` | `--parallel-feature-evaluation` | bool | `False` | Run the per-feature permutation-importance loop across worker processes via joblib instead of sequentially |
+| `n_jobs` | `--n-jobs` | int | `-1` | Worker count when `parallel_feature_evaluation` is True (-1 = use all available cores); ignored otherwise |
+
+### Experiment tracking (opt-in)
+
+| Parameter | CLI flag | Type | Default | Description |
+|---|---|---|---|---|
+| `use_mlflow` | `--use-mlflow` | bool | `False` | Log this run to MLflow for experiment tracking (requires the optional `mlflow` package) |
+| `mlflow_experiment_name` | `--mlflow-experiment-name` | str | `treeshaker` | MLflow experiment name to log runs under when `use_mlflow` is True |
 
 ### Miscellaneous
 
@@ -124,6 +147,7 @@ See [SyntheticConfig](#syntheticconfig) below.
 |---|---|---|---|---|
 | `random_seed` | `--random-seed` | int | `42` | Random seed for reproducibility |
 | `verbose` | `--verbose` | bool | `False` | Enable debug logging |
+| `custom_model` | — (Python API only) | object or None | None | Pre-instantiated sklearn-API-compatible estimator (must implement `.fit`/`.predict`, and `.predict_proba` for classifiers) to use as the primary model instead of XGBoost. Not exposed as a CLI flag or MCP argument since it is a live Python object, not a serializable value. |
 
 ## Nested configurations
 
@@ -211,6 +235,7 @@ config = Config(
 |---|---|---|---|---|
 | `n_bootstrap` | `--n-bootstrap` | int | `0` | Number of bootstrap refits (0 = disabled) |
 | `sample_frac` | `--bootstrap-sample-frac` | float | `1.0` | Fraction of train+val rows per bootstrap sample (0, 1] |
+| `shap_importance_stability_threshold` | `--bootstrap-stability-threshold` | float or None | None | When set and bootstrap is enabled, gates recommendations on SHAP importance ranking stability (coefficient of variation); exceeding it demotes Drop/Keep to Caution |
 
 ### LeakageConfig
 
