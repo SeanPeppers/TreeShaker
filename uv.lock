@@ -3401,7 +3401,7 @@ requires-dist = [
     { name = "shap", specifier = ">=0.52.0" },
     { name = "sphinx", marker = "extra == 'docs'", specifier = ">=7.0.0" },
     { name = "treeshaker-lsh", marker = "extra == 'fast'", directory = "rust/treeshaker_lsh" },
-    { name = "xgboost", specifier = ">=2.0.0" },
+    { name = "xgboost", specifier = ">=3.3.0" },
 ]
 provides-extras = ["dev", "demo", "mcp", "fast", "boruta", "lightgbm", "catboost", "mlflow", "docs"]
 
