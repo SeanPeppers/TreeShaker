@@ -780,6 +780,28 @@ class FeatureSelectionPipeline:
             return
 
         params = _build_xgb_fit_params(best_params, self.config)
+
+        if self.config.streaming:
+            # Out-of-core training: build the booster from on-disk chunks via
+            # XGBoost's external-memory iterator rather than fitting the
+            # sklearn wrapper on the full in-memory matrix. The returned
+            # BoosterAdapter exposes the same predict/predict_proba surface the
+            # downstream steps use. See streaming_train.py for the rationale.
+            from .streaming_train import train_booster_streaming
+
+            self.model = train_booster_streaming(
+                X=X,
+                y=y,
+                task=self.config.task,
+                params=params,
+                feature_names=self.feature_names,
+                chunk_size=self.config.streaming_chunk_size,
+            )
+            self.logger.info(
+                "Final model trained out-of-core (streaming) over on-disk chunks"
+            )
+            return
+
         self.model = _make_xgb_model(self.config.task, params)
 
         self.model.fit(X, y)
