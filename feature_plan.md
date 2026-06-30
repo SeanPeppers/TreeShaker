@@ -62,6 +62,20 @@ Wave 1 (VIF multicollinearity, SHAP interaction values, mutual information scori
 
 ---
 
+## Wave 5 — Enterprise/scale + research credibility + extensibility
+
+| # | Feature | Notes | Status |
+|---|---|---|---|
+| 19 | Custom model passthrough | `custom_model` config field — accept any sklearn-API (`.fit`/`.predict`/`.predict_proba`) estimator as primary model instead of hardcoded XGBoost. Covers arbitrary ML/NN models via sklearn-wrapper adapters (skorch, scikeras). | Not started |
+| 20 | Async/parallel feature evaluation | Currently single-threaded; slow on 1000+ feature datasets. Parallelize per-feature scoring (joblib/concurrent.futures) where independent. | Not started |
+| 21 | Streaming/chunked data support | Datasets too large for RAM — chunked read + incremental fit path. | Not started |
+| 22 | Polars/numpy-native path | Optional non-pandas path for performance; pandas stays default. | Not started |
+| 23 | Multi-seed stability report | Run full pipeline across N random seeds, report variance/agreement on recommendations (beyond existing single-seed bootstrap). | Not started |
+| 24 | Calibrated confidence scores | Replace binary accept/reject recommendation with a calibrated probability/confidence score. | Not started |
+| 25 | Example notebook with real outputs | End-to-end notebook on a real dataset (e.g. `sklearn.datasets.fetch_openml`), committed with executed outputs. | In progress |
+
+Order: 19 (foundational — other backends benefit from generic model interface) → 25 (notebook, can run in parallel, no pipeline.py conflict) → 20/21/22 (scale, touch shared hot paths, do sequentially) → 23/24 (research-credibility, depend on stable model interface from 19).
+
 ## Execution model (once Wave -1 is merged)
 
 - One feature = one branch (`feature/<short-name>`) + one worktree-isolated subagent + one PR against `main`.
