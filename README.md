@@ -50,6 +50,8 @@ results = pipeline.run()
 print(results)
 ```
 
+See [`examples/california_housing_walkthrough.ipynb`](examples/california_housing_walkthrough.ipynb) for an executed, end-to-end walkthrough on a real dataset (with injected leakage/multicollinearity to show detection in action).
+
 ## Documentation
 
 This repo is private, so docs aren't hosted (Read the Docs / GitHub Pages free tiers require a public repo). Source docs live in `docs/source/`, including:
