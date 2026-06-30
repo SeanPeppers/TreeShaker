@@ -27,3 +27,9 @@ Things that are blocked or degraded right now because this repo is **private** o
 ## Not actually blocked by privacy (do anytime)
 
 - **GitHub Sponsors button** — works on private repos too, just needs `.github/FUNDING.yml` with a `github: [username]` entry, plus the user/org being accepted into the GitHub Sponsors program separately (that's an application, not a paid tier).
+
+## Do before public release (not privacy-related, just not ready yet)
+
+- **PyPI package publish** — no `__version__` string, no release workflow, no changelog. Currently the only way to install is `pip install -e .` from a git checkout. Before announcing publicly: add a `release.yml` workflow (build sdist+wheel, `pypa/gh-action-pypi-publish` with trusted publishing — no API token needed), tag-triggered, and bump `version` in `pyproject.toml` per release.
+- **Hosted docs** — covered above (GitHub Pages / RTD), but also blocked on the repo not being ready for public eyes yet, not just the privacy/GHAS issue.
+- **CHANGELOG.md** — none exists yet; needed once there's a versioned release history to track.
