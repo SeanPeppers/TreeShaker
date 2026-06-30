@@ -102,6 +102,51 @@ def _make_xgb_model(task: str, params: dict) -> Any:
     return xgb.XGBRegressor(**params)
 
 
+def _validate_custom_model(model: Any) -> None:
+    """Raise ValueError if `model` is missing required sklearn-API methods.
+
+    Args:
+        model: The Config.custom_model object to validate.
+
+    Raises:
+        ValueError: Listing any of "fit"/"predict" not present as callables
+            on the object.
+    """
+    missing = [
+        name for name in ("fit", "predict") if not callable(getattr(model, name, None))
+    ]
+    if missing:
+        raise ValueError(
+            "custom_model is missing required method(s): "
+            f"{', '.join(missing)}. It must implement .fit(X, y) and"
+            " .predict(X) (classifiers also need .predict_proba(X))."
+        )
+
+
+def _clone_custom_model(model: Any) -> Any:
+    """Return an unfitted clone of a user-supplied custom_model.
+
+    Tries `sklearn.base.clone` first (correct for sklearn-API estimators,
+    including most wrapper adapters like skorch/scikeras); falls back to
+    `copy.deepcopy` for objects clone() rejects (e.g. it doesn't implement
+    get_params/set_params).
+
+    Args:
+        model: The Config.custom_model object to clone.
+
+    Returns:
+        A new, unfitted estimator instance.
+    """
+    from sklearn.base import clone
+
+    try:
+        return clone(model)
+    except TypeError:
+        import copy
+
+        return copy.deepcopy(model)
+
+
 def _ordinal_encode_categoricals(X: pd.DataFrame) -> pd.DataFrame:
     """Ordinal-encode pandas `category` columns for sklearn estimators.
 
@@ -707,17 +752,30 @@ class FeatureSelectionPipeline:
 
     def train_model(self, best_params: dict) -> None:
         """
-        Train the final XGBoost model using the best hyperparameters.
+        Train the final model using the best hyperparameters.
 
         Combines train and validation data for the final fit, giving the
         model access to as much data as possible before importance analysis.
 
+        If config.custom_model is set, fits a clone of that estimator
+        instead of building an XGBClassifier/XGBRegressor; best_params is
+        ignored in that case since it is XGBoost-specific (tuning is also
+        skipped upstream for custom_model -- see run()).
+
         Args:
             best_params: Hyperparameter dict returned by tune_hyperparams().
+                Ignored when config.custom_model is set.
         """
         combined = self._train_val_data()
         X = combined[self.feature_names]
         y = combined[self.config.target_column]
+
+        if self.config.custom_model is not None:
+            _validate_custom_model(self.config.custom_model)
+            self.model = _clone_custom_model(self.config.custom_model)
+            self.model.fit(X, y)
+            self.logger.info("Final custom_model trained on combined train+val data")
+            return
 
         params = _build_xgb_fit_params(best_params, self.config)
         self.model = _make_xgb_model(self.config.task, params)
@@ -921,7 +979,14 @@ class FeatureSelectionPipeline:
         if self.train_data is None or self.val_data is None or self.test_data is None:
             raise RuntimeError("load_data() did not populate train/val/test data")
 
-        if self.config.skip_tuning:
+        if self.config.custom_model is not None:
+            self.logger.info(
+                "config.custom_model is set; skipping Optuna tuning (it is"
+                " XGBoost-specific) and fitting the supplied estimator"
+                " directly."
+            )
+            best_params = {}
+        elif self.config.skip_tuning:
             self.logger.info(
                 "Skipping Optuna tuning (skip_tuning=True); using configured"
                 " XGBoost parameters directly."

@@ -24,7 +24,14 @@ def compute_shap_importance(
     For multiclass problems, SHAP values are averaged across all classes.
 
     Args:
-        model: A fitted XGBoost model (XGBClassifier or XGBRegressor).
+        model: A fitted model. Normally an XGBoost model (XGBClassifier or
+            XGBRegressor), but any fitted estimator is accepted when this
+            is the user's config.custom_model -- non-tree-based models
+            fall back from the fast TreeExplainer to the slower
+            model-agnostic shap.Explainer (see below). Returns an
+            all-zeros array (with a logged warning) if SHAP construction
+            fails entirely for the given model, rather than crashing the
+            pipeline.
         data: Feature DataFrame (no target column) used for explanation.
         feature_names: Ordered list of feature column names.
         sample_size: If set and smaller than len(data), a random sample of
@@ -38,20 +45,44 @@ def compute_shap_importance(
 
     Returns:
         Array of shape (n_features,) with mean absolute SHAP value per feature.
+        All zeros if SHAP construction failed entirely for this model (see
+        `model` above) -- only possible for non-XGBoost config.custom_model.
     """
     logger.info("Computing SHAP importance")
     X = data[feature_names]
     if sample_size is not None and sample_size < len(X):
         X = X.sample(n=sample_size, random_state=random_seed)
-    explainer = shap.TreeExplainer(model)
-    # check_additivity=False: with high-cardinality categorical columns
-    # combined with heavy missingness, floating point summation drift in
-    # XGBoost's missing-value routing can cause SHAP's additivity assertion
-    # (sum of SHAP values == model output) to fail even though the SHAP
-    # values themselves remain valid/meaningful for ranking purposes. This
-    # only disables the post-hoc sanity check; it does not change how SHAP
-    # values are computed.
-    shap_values = explainer.shap_values(X, check_additivity=False)
+
+    try:
+        explainer: Any = shap.TreeExplainer(model)
+        # check_additivity=False: with high-cardinality categorical columns
+        # combined with heavy missingness, floating point summation drift in
+        # XGBoost's missing-value routing can cause SHAP's additivity assertion
+        # (sum of SHAP values == model output) to fail even though the SHAP
+        # values themselves remain valid/meaningful for ranking purposes. This
+        # only disables the post-hoc sanity check; it does not change how SHAP
+        # values are computed.
+        shap_values = explainer.shap_values(X, check_additivity=False)
+    except Exception as tree_err:
+        # TreeExplainer raises whenever `model` isn't tree-based -- expected
+        # for non-tree config.custom_model estimators (e.g. LogisticRegression,
+        # a skorch-wrapped NN). Fall back to the slower, model-agnostic
+        # shap.Explainer rather than failing the pipeline.
+        logger.warning(
+            f"shap.TreeExplainer failed ({tree_err}); falling back to the"
+            " slower model-agnostic shap.Explainer. This is expected for"
+            " non-tree custom_model estimators."
+        )
+        try:
+            explainer = shap.Explainer(model.predict, X)
+            shap_values = explainer(X).values
+        except Exception as generic_err:
+            logger.warning(
+                f"shap.Explainer also failed ({generic_err}); skipping SHAP"
+                " importance for this model and returning zeros. SHAP-based"
+                " recommendations will not be meaningful for this run."
+            )
+            return np.zeros(len(feature_names))
 
     if isinstance(shap_values, list):
         # Older shap versions: multiclass returns a list of arrays, one per
