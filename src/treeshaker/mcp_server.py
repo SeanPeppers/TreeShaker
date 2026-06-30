@@ -76,6 +76,8 @@ def _build_config(
     mlflow_experiment_name: str = "treeshaker",
     parallel_feature_evaluation: bool = False,
     n_jobs: int = -1,
+    streaming: bool = False,
+    streaming_chunk_size: int = 100_000,
     config_overrides: dict | None = None,
 ) -> Config:
     """Build a Config from run_pipeline's explicit kwargs plus generic overrides.
@@ -133,6 +135,8 @@ def _build_config(
         "mlflow_experiment_name": mlflow_experiment_name,
         "parallel_feature_evaluation": parallel_feature_evaluation,
         "n_jobs": n_jobs,
+        "streaming": streaming,
+        "streaming_chunk_size": streaming_chunk_size,
     }
 
     if config_overrides:
@@ -180,6 +184,8 @@ def run_pipeline(
     mlflow_experiment_name: str = "treeshaker",
     parallel_feature_evaluation: bool = False,
     n_jobs: int = -1,
+    streaming: bool = False,
+    streaming_chunk_size: int = 100_000,
     config_overrides: dict | None = None,
 ) -> dict:
     """Run the full TreeShaker feature selection pipeline end to end.
@@ -227,6 +233,11 @@ def run_pipeline(
             loop across worker processes instead of sequentially (opt-in).
         n_jobs: Worker process count when parallel_feature_evaluation is True
             (-1 = all cores). Ignored otherwise.
+        streaming: Opt into the out-of-core / streaming data path for datasets
+            too large for RAM. Reads the CSV in chunks and downcasts numeric
+            dtypes per chunk to lower peak memory (opt-in, off by default).
+        streaming_chunk_size: Rows per chunk when streaming is True. Ignored
+            otherwise.
         config_overrides: Optional dict of additional Config field overrides
             (e.g. {"shap_importance_threshold": 0.02}) for anything not
             covered by the explicit kwargs above.
@@ -271,6 +282,8 @@ def run_pipeline(
             mlflow_experiment_name=mlflow_experiment_name,
             parallel_feature_evaluation=parallel_feature_evaluation,
             n_jobs=n_jobs,
+            streaming=streaming,
+            streaming_chunk_size=streaming_chunk_size,
             config_overrides=config_overrides,
         )
 
