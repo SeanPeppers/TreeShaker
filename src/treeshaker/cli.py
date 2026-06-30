@@ -406,6 +406,20 @@ def parse_arguments() -> argparse.Namespace:
         help="Fraction of rows to sample when row count exceeds threshold."
         " (default: 0.5)",
     )
+    parser.add_argument(
+        "--streaming",
+        action="store_true",
+        help="Opt into the out-of-core / streaming data path for datasets too"
+        " large for RAM. Reads the CSV in chunks and downcasts numeric dtypes"
+        " per chunk to lower peak memory. Off by default.",
+    )
+    parser.add_argument(
+        "--streaming-chunk-size",
+        type=int,
+        default=100_000,
+        help="Rows per chunk when --streaming is set. Ignored otherwise."
+        " (default: 100000)",
+    )
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging.")
     return parser.parse_args()
 
@@ -507,6 +521,8 @@ def main() -> int:
             mlflow_experiment_name=args.mlflow_experiment_name,
             parallel_feature_evaluation=args.parallel_feature_evaluation,
             n_jobs=args.n_jobs,
+            streaming=args.streaming,
+            streaming_chunk_size=args.streaming_chunk_size,
         )
 
     except ConfigError as exc:

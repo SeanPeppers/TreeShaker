@@ -206,6 +206,55 @@ def _split_chronological(
     return train_df, val_df, test_df
 
 
+def _downcast_numeric(df: pd.DataFrame) -> pd.DataFrame:
+    """Downcast numeric columns to their smallest safe dtype.
+
+    Integer columns are downcast to the smallest signed integer dtype that
+    holds their range; float columns are narrowed (float64 -> float32 where
+    pandas deems it safe). Non-numeric columns are left untouched. This is a
+    pure memory-reduction step -- integer values are preserved exactly, and
+    floats are narrowed only via `pd.to_numeric(downcast=...)`.
+
+    Used by the streaming chunked-read path so each chunk is narrowed before
+    concatenation, lowering peak memory versus loading at default
+    int64/float64 width.
+    """
+    out = df.copy()
+    for col in out.columns:
+        dtype = out[col].dtype
+        if pd.api.types.is_integer_dtype(dtype):
+            out[col] = pd.to_numeric(out[col], downcast="integer")
+        elif pd.api.types.is_float_dtype(dtype):
+            out[col] = pd.to_numeric(out[col], downcast="float")
+    return out
+
+
+def _read_csv_streaming(filepath: str, chunk_size: int) -> pd.DataFrame:
+    """Read a CSV in row chunks, downcasting numeric dtypes per chunk.
+
+    This is the Stage 1 memory-reduction path for `streaming=True`: rather
+    than `pd.read_csv` materializing the whole file at default int64/float64
+    width, the file is streamed in `chunk_size`-row pieces, each narrowed via
+    `_downcast_numeric`, then concatenated. The returned DataFrame is
+    identical in contents to `pd.read_csv(filepath)` modulo numeric dtype
+    width.
+
+    Note: this still produces a single in-memory DataFrame at the end. True
+    out-of-core *training* (never materializing the full frame) is layered on
+    in later stages via XGBoost's external-memory DataIter; this stage's value
+    is the dtype downcast, which helps datasets that fit in RAM only after
+    narrowing.
+    """
+    chunks = [
+        _downcast_numeric(chunk)
+        for chunk in pd.read_csv(filepath, chunksize=chunk_size)
+    ]
+    if not chunks:
+        # Mirror pd.read_csv's EmptyDataError contract for an empty file.
+        raise pd.errors.EmptyDataError("No columns to parse from file")
+    return pd.concat(chunks, ignore_index=True)
+
+
 def load_csv(
     filepath: str,
     target_column: str,
@@ -216,6 +265,8 @@ def load_csv(
     time_column: str | None = None,
     large_dataset_sample_threshold: int | None = None,
     large_dataset_sample_frac: float = 0.5,
+    streaming: bool = False,
+    streaming_chunk_size: int = 100_000,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Load a CSV file and split it into train, validation, and test sets.
 
@@ -244,6 +295,13 @@ def load_csv(
             rather than randomly. When None (default), splits are random.
         large_dataset_sample_threshold: Optional row count threshold for sampling.
         large_dataset_sample_frac: Fraction of rows to sample if threshold exceeded.
+        streaming: If True, read the CSV in `streaming_chunk_size` row chunks
+            and downcast numeric dtypes per chunk before concatenating,
+            lowering peak memory versus a single full-width read. The split
+            logic is unchanged. When False (default), the file is read in one
+            `pd.read_csv` call exactly as before.
+        streaming_chunk_size: Rows per chunk when streaming=True. Ignored
+            otherwise.
 
     Returns:
         A tuple of (train_df, val_df, test_df), all including the target
@@ -265,7 +323,14 @@ def load_csv(
         )
 
     try:
-        df = pd.read_csv(filepath)
+        if streaming:
+            logger.info(
+                f"Streaming read enabled: reading in chunks of"
+                f" {streaming_chunk_size} rows with per-chunk numeric downcast"
+            )
+            df = _read_csv_streaming(filepath, streaming_chunk_size)
+        else:
+            df = pd.read_csv(filepath)
     except (pd.errors.EmptyDataError, pd.errors.ParserError) as exc:
         raise ValidationError(
             f"Input file '{filepath}' is empty or not valid CSV."

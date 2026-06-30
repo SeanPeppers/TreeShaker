@@ -95,6 +95,8 @@ Run the full feature selection pipeline end to end.
 | `mlflow_experiment_name` | string | No | `treeshaker` | MLflow experiment name to log under; only used when `use_mlflow` is `true` |
 | `parallel_feature_evaluation` | boolean | No | `false` | Run the per-feature permutation-importance loop across worker processes instead of sequentially |
 | `n_jobs` | integer | No | `-1` | Worker thread count when `parallel_feature_evaluation` is `true` (-1 = all cores); ignored otherwise |
+| `streaming` | boolean | No | `false` | Opt into the out-of-core / streaming data path: read the CSV in chunks and downcast numeric dtypes per chunk to lower peak memory |
+| `streaming_chunk_size` | integer | No | `100000` | Rows per chunk when `streaming` is `true`; ignored otherwise |
 | `config_overrides` | object | No | `null` | Additional Config fields as key-value pairs |
 
 **Returns:** A structured summary including:

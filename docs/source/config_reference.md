@@ -133,6 +133,8 @@ See [SyntheticConfig](#syntheticconfig) below.
 |---|---|---|---|---|
 | `parallel_feature_evaluation` | `--parallel-feature-evaluation` | bool | `False` | Run the per-feature permutation-importance loop across worker processes via joblib instead of sequentially |
 | `n_jobs` | `--n-jobs` | int | `-1` | Worker count when `parallel_feature_evaluation` is True (-1 = use all available cores); ignored otherwise |
+| `streaming` | `--streaming` | bool | `False` | Opt into the out-of-core / streaming data path: read the CSV in chunks and downcast numeric dtypes per chunk to lower peak memory |
+| `streaming_chunk_size` | `--streaming-chunk-size` | int | `100000` | Rows per chunk when `streaming` is True; ignored otherwise |
 
 ### Experiment tracking (opt-in)
 

@@ -349,6 +349,33 @@ class Config:
     following joblib/sklearn convention (-1 = use all available cores).
     Ignored when parallel_feature_evaluation=False. Default -1."""
 
+    streaming: bool = False
+    """If True, opt into the out-of-core / streaming data path for datasets
+    too large to comfortably hold in RAM as a single pandas DataFrame.
+
+    Stage 1 (this field's initial behavior): the input CSV is read in
+    chunks of `streaming_chunk_size` rows and numeric dtypes are downcast
+    per chunk (int64 -> smallest signed int that fits, float64 -> float32)
+    before the chunks are concatenated, lowering peak memory versus a single
+    `pd.read_csv` of the whole file. The subsequent train/val/test split and
+    every downstream step are otherwise unchanged.
+
+    Later stages additionally route XGBoost training through its
+    external-memory `QuantileDMatrix` + a custom `DataIter` over on-disk
+    chunks, and switch the explainability/diagnostic steps (SHAP,
+    permutation importance, mutual information, leakage, residuals) onto a
+    bounded in-memory sample (see `shap_sample_size` /
+    `large_dataset_sample_threshold`) rather than the full dataset.
+
+    Off by default -- the default in-memory path for small/medium datasets
+    is completely unchanged unless this is explicitly enabled."""
+
+    streaming_chunk_size: int = 100_000
+    """Number of CSV rows read per chunk when streaming=True. Larger chunks
+    use more memory but fewer iterations; smaller chunks lower peak memory at
+    the cost of more overhead. Ignored when streaming=False. Must be >= 1.
+    Default 100_000."""
+
     def __post_init__(self) -> None:
         """Validate configuration values."""
         if self.use_gpu and not detect_cuda_available():
@@ -412,6 +439,7 @@ class Config:
             0,
         )
         _require_at_least("n_permutations", self.n_permutations, 1)
+        _require_at_least("streaming_chunk_size", self.streaming_chunk_size, 1)
         if self.shap_sample_size is not None:
             _require_at_least("shap_sample_size", self.shap_sample_size, 1)
         _require_at_least(

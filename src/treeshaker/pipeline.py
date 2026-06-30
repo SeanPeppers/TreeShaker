@@ -613,6 +613,8 @@ class FeatureSelectionPipeline:
             time_column=self.config.time_column,
             large_dataset_sample_threshold=(self.config.large_dataset_sample_threshold),
             large_dataset_sample_frac=self.config.large_dataset_sample_frac,
+            streaming=self.config.streaming,
+            streaming_chunk_size=self.config.streaming_chunk_size,
         )
         feature_names = [
             col for col in self.train_data.columns if col != self.config.target_column
