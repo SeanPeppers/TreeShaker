@@ -1,5 +1,8 @@
 """Tests for SHAP and permutation importance functions."""
 
+from unittest.mock import patch
+
+import joblib
 import numpy as np
 import pandas as pd
 import pytest
@@ -253,6 +256,38 @@ def test_permutation_importance_parallel_matches_sequential(fitted_binary_model)
 
     np.testing.assert_allclose(sequential_importance, parallel_importance)
     np.testing.assert_allclose(sequential_std, parallel_std)
+
+
+def test_permutation_importance_parallel_uses_loky_backend(fitted_binary_model):
+    """parallel=True must dispatch via joblib's loky (process) backend, not
+    threading. XGBoost's Booster.predict is not safe to call concurrently
+    from multiple threads on the same fitted model -- a real-dataset smoke
+    test confirmed the threading backend crashes the process natively
+    (STATUS_STACK_BUFFER_OVERRUN on Windows). Pins the backend choice so
+    this regression can't silently creep back in."""
+    model, df, feature_names = fitted_binary_model
+    metric_fn = get_metric_fn("binary")
+
+    original_init = joblib.Parallel.__init__
+    captured_kwargs: dict = {}
+
+    def spy_init(self, *args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return original_init(self, *args, **kwargs)
+
+    with patch.object(joblib.Parallel, "__init__", spy_init):
+        compute_permutation_importance(
+            model,
+            df,
+            "target",
+            feature_names,
+            metric_fn,
+            use_predict_proba=True,
+            parallel=True,
+            n_jobs=2,
+        )
+
+    assert captured_kwargs.get("backend") == "loky"
 
 
 def test_permutation_importance_binary_uses_predict_proba(fitted_binary_model):

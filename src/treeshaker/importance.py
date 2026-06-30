@@ -382,9 +382,12 @@ def compute_permutation_importance(
             (already-fitted) model and the held-out data, so features are
             independent and safe to evaluate concurrently. Results are
             numerically identical to the sequential path (same per-feature
-            seeds), just computed out of order. Defaults to False --
-            existing single-threaded behavior is unchanged unless this is
-            explicitly opted into.
+            seeds), just computed out of order, provided model.predict is
+            deterministic given the same input (true for XGBoost and any
+            standard sklearn-API estimator; a custom_model with
+            non-deterministic predict could see drift). Defaults to False
+            -- existing single-threaded behavior is unchanged unless this
+            is explicitly opted into.
         n_jobs: Number of worker processes when parallel=True, following
             joblib/sklearn convention (-1 = use all available cores).
             Ignored when parallel=False. Defaults to -1.
@@ -410,11 +413,14 @@ def compute_permutation_importance(
     if parallel:
         from joblib import Parallel, delayed
 
-        # threading backend: each feature only calls model.predict (no
-        # fitting), and numpy/XGBoost inference releases the GIL for the
-        # bulk of the work, so threads avoid the pickling overhead of
-        # shipping the fitted model to separate worker processes.
-        results = Parallel(n_jobs=n_jobs, backend="threading")(
+        # loky (process) backend, not threading: confirmed via real-dataset
+        # smoke test that calling XGBoost's Booster.predict concurrently
+        # from multiple threads on the same fitted model crashes the
+        # process natively on Windows (STATUS_STACK_BUFFER_OVERRUN) --
+        # XGBoost's internal OpenMP state is not thread-safe for
+        # concurrent predict calls. Separate processes avoid that hazard
+        # at the cost of pickling the model once per worker.
+        results = Parallel(n_jobs=n_jobs, backend="loky")(
             delayed(_permutation_importance_for_feature)(
                 i,
                 feature,
