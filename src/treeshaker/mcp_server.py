@@ -55,6 +55,7 @@ def _build_config(
     n_bootstrap: int = 0,
     device: Literal["auto", "cuda", "cpu"] = "auto",
     skip_tuning: bool = False,
+    skip_leakage_check: bool = False,
     test_size: float = 0.2,
     val_size: float = 0.2,
     random_seed: int = 42,
@@ -114,6 +115,7 @@ def _build_config(
         "bootstrap_config": BootstrapConfig(n_bootstrap=n_bootstrap),
         "xgboost_config": XGBoostConfig(device=device),
         "skip_tuning": skip_tuning,
+        "skip_leakage_check": skip_leakage_check,
         "test_size": test_size,
         "val_size": val_size,
         "random_seed": random_seed,
@@ -163,6 +165,7 @@ def run_pipeline(
     n_bootstrap: int = 0,
     device: Literal["auto", "cuda", "cpu"] = "auto",
     skip_tuning: bool = False,
+    skip_leakage_check: bool = False,
     test_size: float = 0.2,
     val_size: float = 0.2,
     random_seed: int = 42,
@@ -207,6 +210,9 @@ def run_pipeline(
             (0 disables).
         device: XGBoost training device: "auto", "cuda", or "cpu".
         skip_tuning: Skip Optuna hyperparameter tuning.
+        skip_leakage_check: Skip all leakage/logical-error checks (the seven
+            checks in LeakageDetector, including look-ahead leakage). Harm
+            detection (SHAP/permutation importance) still runs.
         test_size: Held-out final test fraction.
         val_size: Validation fraction of the remaining train+val pool.
         random_seed: Random seed for reproducibility.
@@ -261,6 +267,7 @@ def run_pipeline(
             n_bootstrap=n_bootstrap,
             device=device,
             skip_tuning=skip_tuning,
+            skip_leakage_check=skip_leakage_check,
             test_size=test_size,
             val_size=val_size,
             random_seed=random_seed,

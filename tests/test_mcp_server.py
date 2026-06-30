@@ -11,6 +11,7 @@ import pandas as pd
 import pytest
 
 from treeshaker.mcp_server import (
+    _build_config,
     get_recommendations,
     inspect_dataset,
     list_config_schema,
@@ -38,6 +39,26 @@ def test_run_pipeline_binary(binary_csv, tmp_path):
     assert isinstance(result["warnings"], list)
     assert "results" in result["output_files"]
     assert os.path.exists(result["output_files"]["results"])
+
+
+def test_mcp_server_skip_leakage_check():
+    """Verify MCP server schema and _build_config support skip_leakage_check.
+
+    Regression test: the flag was previously documented but never wired
+    into mcp_server.py's run_pipeline/_build_config at all.
+    """
+    schema = list_config_schema()
+    field_names = [f["name"] for f in schema["fields"]]
+    assert "skip_leakage_check" in field_names
+
+    cfg = _build_config(
+        input_path="data.csv",
+        target_column="y",
+        task="binary",
+        output_path="out.csv",
+        skip_leakage_check=True,
+    )
+    assert cfg.skip_leakage_check is True
 
 
 def test_run_pipeline_regression(regression_csv, tmp_path):

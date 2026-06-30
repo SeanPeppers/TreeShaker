@@ -74,6 +74,7 @@ Run the full feature selection pipeline end to end.
 | `n_bootstrap` | integer | No | `0` | Number of bootstrap refits (0 = disabled) |
 | `device` | string | No | `auto` | One of `auto`, `cuda`, `cpu` |
 | `skip_tuning` | boolean | No | `false` | Skip Optuna and train directly |
+| `skip_leakage_check` | boolean | No | `false` | Skip all leakage/logical-error checks (harm detection still runs) |
 | `test_size` | number | No | `0.2` | Fraction of full dataset for test set |
 | `val_size` | number | No | `0.2` | Fraction of remaining pool for validation |
 | `random_seed` | integer | No | `42` | Random seed for reproducibility |
