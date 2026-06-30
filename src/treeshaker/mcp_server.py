@@ -74,6 +74,8 @@ def _build_config(
     large_dataset_sample_frac: float = 0.5,
     use_mlflow: bool = False,
     mlflow_experiment_name: str = "treeshaker",
+    parallel_feature_evaluation: bool = False,
+    n_jobs: int = -1,
     config_overrides: dict | None = None,
 ) -> Config:
     """Build a Config from run_pipeline's explicit kwargs plus generic overrides.
@@ -129,6 +131,8 @@ def _build_config(
         "large_dataset_sample_frac": large_dataset_sample_frac,
         "use_mlflow": use_mlflow,
         "mlflow_experiment_name": mlflow_experiment_name,
+        "parallel_feature_evaluation": parallel_feature_evaluation,
+        "n_jobs": n_jobs,
     }
 
     if config_overrides:
@@ -174,6 +178,8 @@ def run_pipeline(
     large_dataset_sample_frac: float = 0.5,
     use_mlflow: bool = False,
     mlflow_experiment_name: str = "treeshaker",
+    parallel_feature_evaluation: bool = False,
+    n_jobs: int = -1,
     config_overrides: dict | None = None,
 ) -> dict:
     """Run the full TreeShaker feature selection pipeline end to end.
@@ -217,6 +223,10 @@ def run_pipeline(
             Requires the optional 'mlflow' package.
         mlflow_experiment_name: MLflow experiment name to log under. Only
             used when use_mlflow is True.
+        parallel_feature_evaluation: Run the per-feature permutation-importance
+            loop across worker threads instead of sequentially (opt-in).
+        n_jobs: Worker thread count when parallel_feature_evaluation is True
+            (-1 = all cores). Ignored otherwise.
         config_overrides: Optional dict of additional Config field overrides
             (e.g. {"shap_importance_threshold": 0.02}) for anything not
             covered by the explicit kwargs above.
@@ -259,6 +269,8 @@ def run_pipeline(
             large_dataset_sample_frac=large_dataset_sample_frac,
             use_mlflow=use_mlflow,
             mlflow_experiment_name=mlflow_experiment_name,
+            parallel_feature_evaluation=parallel_feature_evaluation,
+            n_jobs=n_jobs,
             config_overrides=config_overrides,
         )
 

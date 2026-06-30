@@ -231,6 +231,30 @@ def test_permutation_importance_shape(fitted_binary_model):
     assert (importance_std >= 0).all()
 
 
+def test_permutation_importance_parallel_matches_sequential(fitted_binary_model):
+    """parallel=True must produce numerically identical results to the
+    default sequential path, since both use the same per-feature seeds."""
+    model, df, feature_names = fitted_binary_model
+    metric_fn = get_metric_fn("binary")
+
+    sequential_importance, sequential_std = compute_permutation_importance(
+        model, df, "target", feature_names, metric_fn, use_predict_proba=True
+    )
+    parallel_importance, parallel_std = compute_permutation_importance(
+        model,
+        df,
+        "target",
+        feature_names,
+        metric_fn,
+        use_predict_proba=True,
+        parallel=True,
+        n_jobs=2,
+    )
+
+    np.testing.assert_allclose(sequential_importance, parallel_importance)
+    np.testing.assert_allclose(sequential_std, parallel_std)
+
+
 def test_permutation_importance_binary_uses_predict_proba(fitted_binary_model):
     """Binary permutation importance must score against predicted
     probabilities, not hard class labels, since roc_auc_score expects
