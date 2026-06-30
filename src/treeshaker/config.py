@@ -308,6 +308,26 @@ class Config:
     """MLflow experiment name to log runs under when use_mlflow=True.
     Ignored otherwise. Default "treeshaker"."""
 
+    custom_model: object | None = None
+    """Optional pre-instantiated sklearn-API-compatible estimator (anything
+    with `.fit(X, y)` and `.predict(X)`; classifiers also need
+    `.predict_proba(X)`) to use as the primary model instead of building an
+    XGBClassifier/XGBRegressor. Lets TreeShaker drive arbitrary ML or NN
+    models via standard sklearn wrapper adapters (e.g. skorch, scikeras, or
+    a user's own wrapper) without TreeShaker itself depending on any NN
+    framework.
+
+    Python-API-only: this is a live Python object, not a CLI-flag-able
+    value, so there is intentionally no `--custom-model` CLI flag and no
+    MCP tool parameter for it. Only settable when constructing `Config`
+    directly in Python and passing it to `FeatureSelectionPipeline`. None
+    (default) preserves the existing XGBoost-only behavior unchanged.
+
+    The pipeline clones this estimator (via `sklearn.base.clone` when
+    possible, else `copy.deepcopy`) before fitting, so the object you pass
+    in is never mutated. Required methods are validated at pipeline-run
+    time (not here), raising ValueError listing any missing methods."""
+
     def __post_init__(self) -> None:
         """Validate configuration values."""
         if self.use_gpu and not detect_cuda_available():
