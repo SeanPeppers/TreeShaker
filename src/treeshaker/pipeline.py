@@ -1041,6 +1041,8 @@ class FeatureSelectionPipeline:
             metric_fn=metric_fn,
             use_predict_proba=(self.config.task == "binary"),
             n_repeats=self.config.n_permutations,
+            parallel=self.config.parallel_feature_evaluation,
+            n_jobs=self.config.n_jobs,
         )
 
         mi_score = compute_mutual_information(
