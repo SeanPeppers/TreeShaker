@@ -473,6 +473,7 @@ def main() -> int:
             imbalance_warning_threshold=args.imbalance_threshold,
             verbose=args.verbose,
             skip_tuning=args.skip_tuning,
+            skip_leakage_check=args.skip_leakage_check,
             check_residuals=args.check_residuals,
             flag_leakage_importance_mismatch=args.flag_leakage_importance_mismatch,
             residual_config=ResidualConfig(

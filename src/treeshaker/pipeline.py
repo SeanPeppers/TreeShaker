@@ -1073,36 +1073,43 @@ class FeatureSelectionPipeline:
         # correlation) across the whole dataset, not held-out generalization
         # -- unlike importance evaluation above, using all three splits here
         # is correct and intentional.
-        leakage_detector = LeakageDetector(
-            self.config.leakage_config, screening_mode=self.config.leakage_screening
-        )
-        combined_data = pd.concat(
-            [self.train_data, self.val_data, self.test_data], ignore_index=True
-        )
-        leakage_warnings = leakage_detector.detect(
-            df=combined_data,
-            target_column=self.config.target_column,
-            feature_names=self.feature_names,
-            shap_importance=shap_importance,
-            task=self.config.task,
-        )
-        temporal_structure_warnings = leakage_detector.detect_temporal_structure(
-            df=combined_data,
-            feature_names=self.feature_names,
-        )
-
-        # Check for look-ahead leakage if chronological split is enabled
+        leakage_warnings: dict[str, list[str]] = {
+            name: [] for name in self.feature_names
+        }
+        temporal_structure_warnings: dict[str, list[str]] = {
+            name: [] for name in self.feature_names
+        }
         lookahead_warnings: dict[str, list[str]] = {
             name: [] for name in self.feature_names
         }
-        if self.config.time_column is not None:
-            lookahead_warnings = leakage_detector.detect_lookahead_leakage(
-                train_df=self.train_data,
-                val_df=self.val_data,
-                test_df=self.test_data,
-                time_column=self.config.time_column,
+        if not self.config.skip_leakage_check:
+            leakage_detector = LeakageDetector(
+                self.config.leakage_config, screening_mode=self.config.leakage_screening
+            )
+            combined_data = pd.concat(
+                [self.train_data, self.val_data, self.test_data], ignore_index=True
+            )
+            leakage_warnings = leakage_detector.detect(
+                df=combined_data,
+                target_column=self.config.target_column,
+                feature_names=self.feature_names,
+                shap_importance=shap_importance,
+                task=self.config.task,
+            )
+            temporal_structure_warnings = leakage_detector.detect_temporal_structure(
+                df=combined_data,
                 feature_names=self.feature_names,
             )
+
+            # Check for look-ahead leakage if chronological split is enabled
+            if self.config.time_column is not None:
+                lookahead_warnings = leakage_detector.detect_lookahead_leakage(
+                    train_df=self.train_data,
+                    val_df=self.val_data,
+                    test_df=self.test_data,
+                    time_column=self.config.time_column,
+                    feature_names=self.feature_names,
+                )
 
         residual_correlation = None
         residual_notes: dict[str, str] = {}
