@@ -15,6 +15,7 @@ Most feature-importance tools give you a single number per feature from a single
 - **Stability, not just a point estimate** — permutation importance is averaged over multiple shuffles, and an opt-in bootstrap ensemble shows whether a feature's rank holds up.
 - **Plain-English explanations** — each feature gets a Drop/Caution/Keep recommendation with clear reasoning.
 - **Cross-checked, not single-signal** — SHAP, permutation importance, mutual information, leakage statistics, and residual correlation are all computed independently. An opt-in importance divergence score (`compute_importance_divergence` / `--compute-importance-divergence`) flags features where these signals disagree about a feature's rank.
+- **Skip leakage checks** — opt-out with `--skip-leakage-check` (`skip_leakage_check=True`) to disable all leakage/logical-error detection (the seven checks in `LeakageDetector`, including look-ahead leakage) when it's known to be unnecessary or too slow for a given run. SHAP/permutation importance still run.
 - **Boruta feature selection** — opt-in feature selection with `--use-boruta` (`use_boruta=True`), adding a `boruta_decision` column (`Confirmed`, `Tentative`, or `Rejected`).
 - **RFECV feature selection** — opt-in feature elimination with `--use-rfecv` (`use_rfecv=True`), adding an `rfecv_ranking` column (1 = selected feature rank).
 - **LightGBM importance cross-validation** — opt-in model swap with `--use-lightgbm` (`use_lightgbm=True`), adding a `lightgbm_importance` column.
