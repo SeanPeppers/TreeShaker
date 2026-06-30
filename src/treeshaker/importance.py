@@ -295,6 +295,48 @@ def _get_predictions(
     return np.asarray(model.predict(X))
 
 
+def _permutation_importance_for_feature(
+    i: int,
+    feature: str,
+    model: Any,
+    X: pd.DataFrame,
+    y: np.ndarray,
+    baseline_score: float,
+    metric_fn: Callable[[np.ndarray, np.ndarray], float],
+    use_predict_proba: bool,
+    n_repeats: int,
+) -> tuple[float, float]:
+    """Compute the mean/std permutation-importance score drop for one feature.
+
+    Factored out of `compute_permutation_importance`'s loop body so it can
+    be called either in-process (default, sequential) or dispatched to
+    worker processes via joblib when `parallel_feature_evaluation=True`.
+    Each feature's shuffles only read `model`/`X`/`y` and write to local
+    variables, so this is safe to run concurrently across features.
+    """
+    repeat_drops = np.zeros(n_repeats)
+    for r in range(n_repeats):
+        X_shuffled = X.copy()
+        # A distinct but deterministic seed per feature and repeat
+        # keeps results reproducible while still shuffling each
+        # column differently across both features and repeats.
+        rng = np.random.default_rng(seed=42 + i * n_repeats + r)
+        shuffled_values = rng.permutation(np.asarray(X_shuffled[feature].values))
+        # Re-wrap with the original dtype: for pandas `category` columns
+        # (see dtype_handling.py), permutation via a plain numpy array
+        # silently degrades the dtype to plain object/str, which then
+        # makes XGBoost reject the DataFrame on the next predict() call
+        # with a confusing low-level error. Numeric/bool dtypes are
+        # unaffected by this re-wrap.
+        X_shuffled[feature] = pd.Series(
+            shuffled_values, index=X_shuffled.index, dtype=X[feature].dtype
+        )
+        shuffled_preds = _get_predictions(model, X_shuffled, use_predict_proba)
+        shuffled_score = metric_fn(y, shuffled_preds)
+        repeat_drops[r] = baseline_score - shuffled_score
+    return float(repeat_drops.mean()), float(repeat_drops.std())
+
+
 def compute_permutation_importance(
     model: Any,
     data: pd.DataFrame,
@@ -303,6 +345,8 @@ def compute_permutation_importance(
     metric_fn: Callable[[np.ndarray, np.ndarray], float],
     use_predict_proba: bool = False,
     n_repeats: int = 5,
+    parallel: bool = False,
+    n_jobs: int = -1,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Compute permutation importance for each feature.
@@ -332,6 +376,21 @@ def compute_permutation_importance(
             deterministic seed (derived from the per-feature seed and the
             repeat index), so results remain fully reproducible for a
             given n_repeats. Defaults to 5.
+        parallel: If True, dispatch the per-feature loop across worker
+            processes via joblib instead of running it sequentially in a
+            single Python loop. Each feature's shuffles only read the
+            (already-fitted) model and the held-out data, so features are
+            independent and safe to evaluate concurrently. Results are
+            numerically identical to the sequential path (same per-feature
+            seeds), just computed out of order, provided model.predict is
+            deterministic given the same input (true for XGBoost and any
+            standard sklearn-API estimator; a custom_model with
+            non-deterministic predict could see drift). Defaults to False
+            -- existing single-threaded behavior is unchanged unless this
+            is explicitly opted into.
+        n_jobs: Number of worker processes when parallel=True, following
+            joblib/sklearn convention (-1 = use all available cores).
+            Ignored when parallel=False. Defaults to -1.
 
     Returns:
         A tuple (importances, importances_std), each of shape
@@ -350,29 +409,49 @@ def compute_permutation_importance(
 
     importances = np.zeros(len(feature_names))
     importances_std = np.zeros(len(feature_names))
-    for i, feature in enumerate(feature_names):
-        repeat_drops = np.zeros(n_repeats)
-        for r in range(n_repeats):
-            X_shuffled = X.copy()
-            # A distinct but deterministic seed per feature and repeat
-            # keeps results reproducible while still shuffling each
-            # column differently across both features and repeats.
-            rng = np.random.default_rng(seed=42 + i * n_repeats + r)
-            shuffled_values = rng.permutation(np.asarray(X_shuffled[feature].values))
-            # Re-wrap with the original dtype: for pandas `category` columns
-            # (see dtype_handling.py), permutation via a plain numpy array
-            # silently degrades the dtype to plain object/str, which then
-            # makes XGBoost reject the DataFrame on the next predict() call
-            # with a confusing low-level error. Numeric/bool dtypes are
-            # unaffected by this re-wrap.
-            X_shuffled[feature] = pd.Series(
-                shuffled_values, index=X_shuffled.index, dtype=X[feature].dtype
+
+    if parallel:
+        from joblib import Parallel, delayed
+
+        # loky (process) backend, not threading: confirmed via real-dataset
+        # smoke test that calling XGBoost's Booster.predict concurrently
+        # from multiple threads on the same fitted model crashes the
+        # process natively on Windows (STATUS_STACK_BUFFER_OVERRUN) --
+        # XGBoost's internal OpenMP state is not thread-safe for
+        # concurrent predict calls. Separate processes avoid that hazard
+        # at the cost of pickling the model once per worker.
+        results = Parallel(n_jobs=n_jobs, backend="loky")(
+            delayed(_permutation_importance_for_feature)(
+                i,
+                feature,
+                model,
+                X,
+                y,
+                baseline_score,
+                metric_fn,
+                use_predict_proba,
+                n_repeats,
             )
-            shuffled_preds = _get_predictions(model, X_shuffled, use_predict_proba)
-            shuffled_score = metric_fn(y, shuffled_preds)
-            repeat_drops[r] = baseline_score - shuffled_score
-        importances[i] = repeat_drops.mean()
-        importances_std[i] = repeat_drops.std()
+            for i, feature in enumerate(feature_names)
+        )
+        for i, (mean_drop, std_drop) in enumerate(results):
+            importances[i] = mean_drop
+            importances_std[i] = std_drop
+    else:
+        for i, feature in enumerate(feature_names):
+            mean_drop, std_drop = _permutation_importance_for_feature(
+                i,
+                feature,
+                model,
+                X,
+                y,
+                baseline_score,
+                metric_fn,
+                use_predict_proba,
+                n_repeats,
+            )
+            importances[i] = mean_drop
+            importances_std[i] = std_drop
 
     return importances, importances_std
 

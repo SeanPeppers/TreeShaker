@@ -328,6 +328,20 @@ class Config:
     in is never mutated. Required methods are validated at pipeline-run
     time (not here), raising ValueError listing any missing methods."""
 
+    parallel_feature_evaluation: bool = False
+    """If True, run the per-feature permutation-importance loop across
+    worker threads (via joblib) instead of a single sequential Python
+    loop. Speeds up evaluation on datasets with many features. Results
+    are numerically identical to the sequential path (same per-feature
+    random seeds), just computed out of order. Off by default --
+    existing single-threaded behavior is unchanged unless this is
+    explicitly opted into."""
+
+    n_jobs: int = -1
+    """Number of worker threads when parallel_feature_evaluation=True,
+    following joblib/sklearn convention (-1 = use all available cores).
+    Ignored when parallel_feature_evaluation=False. Default -1."""
+
     def __post_init__(self) -> None:
         """Validate configuration values."""
         if self.use_gpu and not detect_cuda_available():

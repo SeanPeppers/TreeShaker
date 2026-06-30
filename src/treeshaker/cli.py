@@ -365,6 +365,20 @@ def parse_arguments() -> argparse.Namespace:
         " hyperparameter tuning.",
     )
     parser.add_argument(
+        "--parallel-feature-evaluation",
+        action="store_true",
+        help="Run the per-feature permutation-importance loop across worker"
+        " threads instead of sequentially. Speeds up evaluation on"
+        " datasets with many features.",
+    )
+    parser.add_argument(
+        "--n-jobs",
+        type=int,
+        default=-1,
+        help="Number of worker threads when --parallel-feature-evaluation is"
+        " set (-1 = use all available cores). Ignored otherwise. Default -1.",
+    )
+    parser.add_argument(
         "--use-mlflow",
         action="store_true",
         help="Log this run to MLflow for experiment tracking: Config"
@@ -490,6 +504,8 @@ def main() -> int:
             large_dataset_sample_frac=args.large_dataset_sample_frac,
             use_mlflow=args.use_mlflow,
             mlflow_experiment_name=args.mlflow_experiment_name,
+            parallel_feature_evaluation=args.parallel_feature_evaluation,
+            n_jobs=args.n_jobs,
         )
 
     except ConfigError as exc:
