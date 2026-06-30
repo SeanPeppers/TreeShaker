@@ -7,6 +7,7 @@ import pytest
 from conftest import cli_argv
 
 from treeshaker.cli import main, parse_arguments
+from treeshaker.config import Config
 
 
 def test_parse_arguments_required():
@@ -91,6 +92,35 @@ def test_main_explicit_cuda_device_without_gpu_returns_error(binary_csv, tmp_pat
     ):
         exit_code = main()
     assert exit_code == 1
+
+
+def test_main_skip_leakage_check_propagates_to_config(binary_csv, tmp_path):
+    """--skip-leakage-check must reach the built Config, not just argparse.
+
+    Regression test: the flag was previously parsed but never passed into
+    the Config(...) call in main(), so it silently did nothing.
+    """
+    output = str(tmp_path / "results.csv")
+    with (
+        patch(
+            "sys.argv",
+            cli_argv(
+                "--output",
+                output,
+                "--optuna-trials",
+                "1",
+                "--device",
+                "cpu",
+                "--skip-leakage-check",
+                input=binary_csv,
+                target="target",
+            ),
+        ),
+        patch("treeshaker.cli.Config", wraps=Config) as mock_config,
+    ):
+        exit_code = main()
+    assert exit_code == 0
+    assert mock_config.call_args.kwargs["skip_leakage_check"] is True
 
 
 def test_main_invalid_json_xgboost_params(tmp_path):

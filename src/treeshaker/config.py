@@ -179,6 +179,10 @@ class Config:
     imbalance_warning_threshold: float = 0.1
     verbose: bool = False
     skip_tuning: bool = False
+    skip_leakage_check: bool = False
+    """If True, skip all leakage and logical-error detection (the seven
+    checks in LeakageDetector, including look-ahead leakage). Harm
+    detection (SHAP/permutation importance) still runs."""
     check_residuals: bool = False
     """If True, compute per-feature correlation with model prediction
     residuals on the held-out test set and surface a warning when a
