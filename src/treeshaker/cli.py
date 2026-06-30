@@ -368,14 +368,14 @@ def parse_arguments() -> argparse.Namespace:
         "--parallel-feature-evaluation",
         action="store_true",
         help="Run the per-feature permutation-importance loop across worker"
-        " threads instead of sequentially. Speeds up evaluation on"
+        " processes instead of sequentially. Speeds up evaluation on"
         " datasets with many features.",
     )
     parser.add_argument(
         "--n-jobs",
         type=int,
         default=-1,
-        help="Number of worker threads when --parallel-feature-evaluation is"
+        help="Number of worker processes when --parallel-feature-evaluation is"
         " set (-1 = use all available cores). Ignored otherwise. Default -1.",
     )
     parser.add_argument(

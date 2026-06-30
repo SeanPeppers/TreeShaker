@@ -224,8 +224,8 @@ def run_pipeline(
         mlflow_experiment_name: MLflow experiment name to log under. Only
             used when use_mlflow is True.
         parallel_feature_evaluation: Run the per-feature permutation-importance
-            loop across worker threads instead of sequentially (opt-in).
-        n_jobs: Worker thread count when parallel_feature_evaluation is True
+            loop across worker processes instead of sequentially (opt-in).
+        n_jobs: Worker process count when parallel_feature_evaluation is True
             (-1 = all cores). Ignored otherwise.
         config_overrides: Optional dict of additional Config field overrides
             (e.g. {"shap_importance_threshold": 0.02}) for anything not
