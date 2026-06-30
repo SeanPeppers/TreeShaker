@@ -153,3 +153,7 @@ marketing.md
 /rust/target/
 /rust/**/target/
 Cargo.lock
+
+# Notebook-generated data artifacts (regenerated when notebooks are re-run)
+examples/*.csv
+treeshaker_results.csv
