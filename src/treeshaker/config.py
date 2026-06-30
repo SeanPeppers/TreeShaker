@@ -356,11 +356,23 @@ class Config:
     `pd.read_csv` of the whole file. The subsequent train/val/test split and
     every downstream step are otherwise unchanged.
 
-    Later stages additionally route XGBoost training through its
-    external-memory `QuantileDMatrix` + a custom `DataIter` over on-disk
-    chunks, and switch the explainability/diagnostic steps (SHAP,
-    permutation importance, mutual information, leakage, residuals) onto a
-    bounded in-memory sample (see `shap_sample_size` /
+    Stage 2 (out-of-core training): XGBoost training is routed through its
+    external-memory `ExtMemQuantileDMatrix` + a custom `DataIter` that
+    streams on-disk chunks of the train+val data, so the booster fit never
+    holds more than one chunk plus the quantile sketch in memory. The fitted
+    booster is wrapped in a thin sklearn-style adapter so every downstream
+    step (SHAP, permutation importance, residuals) is unchanged.
+
+    CPU-only constraint: the external-memory training path runs on CPU.
+    XGBoost's GPU external memory requires GPU-resident (cupy/RAPIDS) chunks,
+    which TreeShaker does not depend on. If a GPU device is requested
+    (use_gpu / xgboost_config.device="cuda") together with streaming, the
+    streaming booster falls back to CPU with a warning (the GPU is still used
+    for the in-memory path when streaming is off).
+
+    Later stages additionally switch the explainability/diagnostic steps
+    (SHAP, permutation importance, mutual information, leakage, residuals)
+    onto a bounded in-memory sample (see `shap_sample_size` /
     `large_dataset_sample_threshold`) rather than the full dataset.
 
     Off by default -- the default in-memory path for small/medium datasets
