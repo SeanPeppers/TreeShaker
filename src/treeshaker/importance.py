@@ -10,6 +10,23 @@ import shap
 logger = logging.getLogger(__name__)
 
 
+def _shap_model(model: Any) -> Any:
+    """Return the object SHAP's TreeExplainer should explain.
+
+    The streaming out-of-core path produces a BoosterAdapter wrapping a raw
+    xgboost.Booster (it has no native tree structure SHAP can read from the
+    adapter itself). Hand SHAP the underlying booster via get_booster() so it
+    keeps the fast TreeExplainer path; for ordinary sklearn estimators (which
+    also expose get_booster() for XGB, or nothing for others) this is a no-op
+    in practice because TreeExplainer already understands them -- so we only
+    unwrap when the object is our adapter. Detection is duck-typed (presence
+    of get_booster + our marker attribute) to avoid importing pipeline here.
+    """
+    if hasattr(model, "get_booster") and type(model).__name__ == "BoosterAdapter":
+        return model.get_booster()
+    return model
+
+
 def compute_shap_importance(
     model: Any,
     data: pd.DataFrame,
@@ -54,7 +71,7 @@ def compute_shap_importance(
         X = X.sample(n=sample_size, random_state=random_seed)
 
     try:
-        explainer: Any = shap.TreeExplainer(model)
+        explainer: Any = shap.TreeExplainer(_shap_model(model))
         # check_additivity=False: with high-cardinality categorical columns
         # combined with heavy missingness, floating point summation drift in
         # XGBoost's missing-value routing can cause SHAP's additivity assertion
@@ -179,7 +196,7 @@ def compute_shap_interactions(
         sorted by interaction_strength descending, limited to top_n rows.
     """
     logger.info("Computing SHAP interaction values (this can be slow)")
-    explainer = shap.TreeExplainer(model)
+    explainer = shap.TreeExplainer(_shap_model(model))
     # Note: shap_interaction_values does not accept check_additivity (unlike
     # shap_values, see compute_shap_importance) -- it does not run the
     # additivity assertion in the first place.
