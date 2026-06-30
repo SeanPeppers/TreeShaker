@@ -388,6 +388,27 @@ class Config:
     the cost of more overhead. Ignored when streaming=False. Must be >= 1.
     Default 100_000."""
 
+    n_stability_runs: int = 0
+    """Number of additional pipeline runs (with different random seeds) used to
+    estimate per-feature recommendation stability. 0 = disabled (default).
+
+    When > 0, the pipeline is re-run `n_stability_runs` times after the main
+    run, each with a different random seed (derived from `random_seed` unless
+    `stability_seeds` is set explicitly). The per-run recommendations are
+    collected and two columns are appended to the results DataFrame:
+    - `stability_score`: fraction of runs (including the main run) that agreed
+      with the final recommendation (0.0–1.0). 1.0 = unanimous across all seeds.
+    - `stability_votes`: e.g. "Keep:4,Drop:1" — vote tally across all seeds.
+
+    Use with `skip_tuning=True` to keep total runtime reasonable; each
+    additional run adds roughly one main-pipeline-run's worth of time."""
+
+    stability_seeds: list[int] | None = None
+    """Explicit list of random seeds for the additional stability runs. Must
+    have exactly `n_stability_runs` elements when set. When None (default),
+    seeds are auto-derived as [random_seed + 1, random_seed + 2, ...] up to
+    `n_stability_runs`. Ignored when n_stability_runs=0."""
+
     def __post_init__(self) -> None:
         """Validate configuration values."""
         if self.use_gpu and not detect_cuda_available():
@@ -452,6 +473,18 @@ class Config:
         )
         _require_at_least("n_permutations", self.n_permutations, 1)
         _require_at_least("streaming_chunk_size", self.streaming_chunk_size, 1)
+        _require_at_least("n_stability_runs", self.n_stability_runs, 0)
+        if self.stability_seeds is not None:
+            if self.n_stability_runs == 0:
+                raise ConfigError(
+                    "stability_seeds has no effect when n_stability_runs=0."
+                )
+            if len(self.stability_seeds) != self.n_stability_runs:
+                raise ConfigError(
+                    f"stability_seeds must have exactly n_stability_runs="
+                    f"{self.n_stability_runs} elements, got"
+                    f" {len(self.stability_seeds)}."
+                )
         if self.shap_sample_size is not None:
             _require_at_least("shap_sample_size", self.shap_sample_size, 1)
         _require_at_least(

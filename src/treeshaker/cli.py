@@ -420,6 +420,22 @@ def parse_arguments() -> argparse.Namespace:
         help="Rows per chunk when --streaming is set. Ignored otherwise."
         " (default: 100000)",
     )
+    parser.add_argument(
+        "--n-stability-runs",
+        type=int,
+        default=0,
+        help="Re-run the pipeline this many times with different random seeds and"
+        " add stability_score / stability_votes columns to the results."
+        " 0 = disabled (default). Use with --skip-tuning to keep runtime reasonable.",
+    )
+    parser.add_argument(
+        "--stability-seeds",
+        type=int,
+        nargs="+",
+        default=None,
+        help="Explicit seeds for stability runs. Must match --n-stability-runs."
+        " Auto-derived from --random-seed when omitted.",
+    )
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging.")
     return parser.parse_args()
 
@@ -523,6 +539,8 @@ def main() -> int:
             n_jobs=args.n_jobs,
             streaming=args.streaming,
             streaming_chunk_size=args.streaming_chunk_size,
+            n_stability_runs=args.n_stability_runs,
+            stability_seeds=args.stability_seeds,
         )
 
     except ConfigError as exc:
