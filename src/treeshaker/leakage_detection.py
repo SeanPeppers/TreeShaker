@@ -311,13 +311,28 @@ class LeakageDetector:
             leading_nan_count = int(np.argmax(~is_na)) if not is_na.all() else n
 
             if offset is not None and leading_nan_count != offset:
-                warnings[name].append(
-                    f"Temporal structure warning: '{name}' has"
-                    f" {leading_nan_count} leading NaN(s), but its name"
-                    f" implies an offset/window of {offset}. A mismatch"
-                    f" can indicate an off-by-one or windowing bug that"
-                    f" leaks future information into earlier rows."
-                )
+                if (
+                    "rolling" in name.lower()
+                    and offset > 1
+                    and leading_nan_count == offset - 1
+                ):
+                    warnings[name].append(
+                        f"Future-peeking warning: '{name}' has"
+                        f" {leading_nan_count} leading NaN(s), but a rolling"
+                        f" window of {offset} with a proper 1-step lag should"
+                        f" produce {offset} leading NaN(s). Having exactly"
+                        f" {offset - 1} suggests shift=0 (no lag), meaning the"
+                        f" current row's own value is included in the window —"
+                        f" this leaks the present/future value into the feature."
+                    )
+                else:
+                    warnings[name].append(
+                        f"Temporal structure warning: '{name}' has"
+                        f" {leading_nan_count} leading NaN(s), but its name"
+                        f" implies an offset/window of {offset}. A mismatch"
+                        f" can indicate an off-by-one or windowing bug that"
+                        f" leaks future information into earlier rows."
+                    )
 
             if leading_nan_count < n:
                 trailing = is_na[leading_nan_count:]
@@ -801,6 +816,16 @@ class LeakageDetector:
             and pd.notna(test_end)
             and val_end <= test_start
         )
+
+        if not is_chronological_split and pd.notna(val_start) and pd.notna(test_start):
+            warnings[time_column].append(
+                f"Temporal split warning: train/val/test time ranges overlap in"
+                f" '{time_column}' (val ends at {val_end}, test starts at"
+                f" {test_start}). This indicates a random split was used on"
+                f" time-series data. Future information from the test period"
+                f" leaks into training rows, inflating model performance."
+                f" Use time_column= to enable a chronological split."
+            )
 
         # For each numeric feature, check if there's a sharp change at split
         # boundaries that might indicate look-ahead

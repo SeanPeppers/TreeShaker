@@ -16,24 +16,6 @@ def _make_detector() -> LeakageDetector:
     return LeakageDetector(LeakageConfig())
 
 
-def _make_time_splits(
-    n: int = 120,
-    seed: int = 0,
-    shuffle: bool = False,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Return deterministic train/val/test splits split chronologically."""
-    rng = np.random.default_rng(seed)
-    t = np.arange(n, dtype=float)
-    y = rng.standard_normal(n)
-    df = pd.DataFrame({"t": t, "y": y})
-    if shuffle:
-        df = df.sample(frac=1, random_state=0).reset_index(drop=True)
-    train = df.iloc[:80].copy()
-    val = df.iloc[80:100].copy()
-    test = df.iloc[100:].copy()
-    return train, val, test
-
-
 # ---------------------------------------------------------------------------
 # 1. Unsorted time column warning
 # ---------------------------------------------------------------------------
@@ -52,7 +34,8 @@ def test_unsorted_time_column_emits_warning(tmp_path, caplog):
 
     from treeshaker.utils import load_csv
 
-    with caplog.at_level(logging.WARNING, logger="root"):
+    # caplog without logger= captures root logger (logging.warning goes there)
+    with caplog.at_level(logging.WARNING):
         load_csv(
             str(csv_path),
             target_column="y",
@@ -78,7 +61,7 @@ def test_sorted_time_column_no_warning(tmp_path, caplog):
 
     from treeshaker.utils import load_csv
 
-    with caplog.at_level(logging.WARNING, logger="root"):
+    with caplog.at_level(logging.WARNING):
         load_csv(
             str(csv_path),
             target_column="y",
@@ -95,8 +78,16 @@ def test_sorted_time_column_no_warning(tmp_path, caplog):
 
 
 def test_random_split_on_timeseries_flagged():
-    """Overlapping time ranges → warning on time_column key."""
-    train, val, test = _make_time_splits(shuffle=True)
+    """Explicitly overlapping time ranges → overlap warning on time_column key."""
+    # Construct splits where time ranges definitely overlap
+    t = np.arange(120, dtype=float)
+    rng = np.random.default_rng(0)
+    y = rng.standard_normal(120)
+    # train: t=0..79, val: t=40..59 (overlaps train), test: t=10..29 (overlaps both)
+    train = pd.DataFrame({"t": t[:80], "y": y[:80]})
+    val = pd.DataFrame({"t": t[40:60], "y": y[40:60]})
+    test = pd.DataFrame({"t": t[10:30], "y": y[10:30]})
+
     detector = _make_detector()
     warnings = detector.detect_lookahead_leakage(
         train, val, test, time_column="t", feature_names=["t", "y"]
@@ -108,7 +99,13 @@ def test_random_split_on_timeseries_flagged():
 
 def test_chronological_split_no_random_split_warning():
     """Proper chronological split → no overlap warning."""
-    train, val, test = _make_time_splits(shuffle=False)
+    t = np.arange(120, dtype=float)
+    rng = np.random.default_rng(0)
+    y = rng.standard_normal(120)
+    train = pd.DataFrame({"t": t[:80], "y": y[:80]})
+    val = pd.DataFrame({"t": t[80:100], "y": y[80:100]})
+    test = pd.DataFrame({"t": t[100:], "y": y[100:]})
+
     detector = _make_detector()
     warnings = detector.detect_lookahead_leakage(
         train, val, test, time_column="t", feature_names=["t", "y"]

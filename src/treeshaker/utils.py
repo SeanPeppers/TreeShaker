@@ -183,6 +183,17 @@ def _split_chronological(
             f" Available columns: {sorted(df.columns)}"
         )
 
+    # Warn if the raw data was not already sorted — lag/rolling features
+    # computed on unsorted data before calling TreeShaker are corrupted.
+    if not df[time_column].is_monotonic_increasing:
+        logging.warning(
+            f"time_column '{time_column}' is not monotonically sorted in the"
+            " input data. If temporal features (lags, rolling windows) were"
+            " engineered on the unsorted data before this pipeline run, those"
+            " features may contain future information and should be"
+            " recomputed on sorted data."
+        )
+
     # Sort by time ascending
     try:
         df_sorted = df.sort_values(by=time_column).reset_index(drop=True)
