@@ -465,6 +465,19 @@ def parse_arguments() -> argparse.Namespace:
             "(default: 100.0)"
         ),
     )
+    parser.add_argument(
+        "--collinearity-threshold",
+        type=float,
+        default=0.0,
+        help="Spearman |r| threshold for grouping correlated features. 0=disabled. (default: 0.0)",
+    )
+    parser.add_argument(
+        "--collinearity-method",
+        type=str,
+        default="spearman",
+        choices=["spearman", "pearson"],
+        help="Correlation method for collinearity clustering. (default: spearman)",
+    )
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging.")
     return parser.parse_args()
 
@@ -574,6 +587,8 @@ def main() -> int:
             streaming_eval_sample_size=args.streaming_eval_sample_size,
             n_shadow_probes=args.n_shadow_probes,
             shadow_probe_percentile=args.shadow_probe_percentile,
+            collinearity_threshold=args.collinearity_threshold,
+            collinearity_method=args.collinearity_method,
         )
 
     except ConfigError as exc:
