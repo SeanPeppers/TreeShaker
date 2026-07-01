@@ -438,6 +438,10 @@ class Config:
     feature set; only the row count used to estimate them is capped. Ignored
     when streaming=False (the full splits are used, exactly as before). Must
     be >= 1. Default 50_000."""
+    n_shadow_probes: int = 0
+    """Number of shadow probe columns to inject (0 = disabled, suggested 5-20)."""
+    shadow_probe_percentile: float = 100.0
+    """Percentile of probe importances to use as noise threshold (0-100, default 100.0/max)."""
 
     def __post_init__(self) -> None:
         """Validate configuration values."""
@@ -550,4 +554,10 @@ class Config:
                 "permutation_metric must be one of"
                 f" {sorted(VALID_PERMUTATION_METRICS)}, got"
                 f" {self.permutation_metric!r}"
+            )
+        _require_at_least("n_shadow_probes", self.n_shadow_probes, 0)
+        if not 0.0 <= self.shadow_probe_percentile <= 100.0:
+            raise ConfigError(
+                "shadow_probe_percentile must be in [0, 100], got"
+                f" {self.shadow_probe_percentile}"
             )

@@ -82,6 +82,8 @@ def _build_config(
     n_stability_runs: int = 0,
     compute_confidence_scores: bool = False,
     streaming_eval_sample_size: int = 50_000,
+    n_shadow_probes: int = 0,
+    shadow_probe_percentile: float = 100.0,
     config_overrides: dict | None = None,
 ) -> Config:
     """Build a Config from run_pipeline's explicit kwargs plus generic overrides.
@@ -145,6 +147,8 @@ def _build_config(
         "n_stability_runs": n_stability_runs,
         "compute_confidence_scores": compute_confidence_scores,
         "streaming_eval_sample_size": streaming_eval_sample_size,
+        "n_shadow_probes": n_shadow_probes,
+        "shadow_probe_percentile": shadow_probe_percentile,
     }
 
     if config_overrides:
@@ -198,6 +202,8 @@ def run_pipeline(
     n_stability_runs: int = 0,
     compute_confidence_scores: bool = False,
     streaming_eval_sample_size: int = 50_000,
+    n_shadow_probes: int = 0,
+    shadow_probe_percentile: float = 100.0,
     config_overrides: dict | None = None,
 ) -> dict:
     """Run the full TreeShaker feature selection pipeline end to end.
@@ -262,6 +268,8 @@ def run_pipeline(
         streaming_eval_sample_size: Max rows used for the SHAP/permutation/MI/
             leakage/residual diagnostics when streaming is True; larger splits
             are sampled down to this. Ignored otherwise.
+        n_shadow_probes: Number of shadow probe columns to inject (0 = disabled, suggested 5-20).
+        shadow_probe_percentile: Percentile of probe importances to use as noise threshold (0-100, default 100.0/max).
         config_overrides: Optional dict of additional Config field overrides
             (e.g. {"shap_importance_threshold": 0.02}) for anything not
             covered by the explicit kwargs above.
@@ -312,6 +320,8 @@ def run_pipeline(
             n_stability_runs=n_stability_runs,
             compute_confidence_scores=compute_confidence_scores,
             streaming_eval_sample_size=streaming_eval_sample_size,
+            n_shadow_probes=n_shadow_probes,
+            shadow_probe_percentile=shadow_probe_percentile,
             config_overrides=config_overrides,
         )
 
