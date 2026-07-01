@@ -441,6 +441,12 @@ def parse_arguments() -> argparse.Namespace:
         action="store_true",
         help="Compute calibrated confidence scores (0-1) for each feature's"
         " recommendation.",
+        "--streaming-eval-sample-size",
+        type=int,
+        default=50_000,
+        help="Max rows used for SHAP/permutation/MI/leakage/residual"
+        " diagnostics when --streaming is set; larger splits are sampled"
+        " down to this. Ignored otherwise. (default: 50000)",
     )
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging.")
     return parser.parse_args()
@@ -548,6 +554,7 @@ def main() -> int:
             n_stability_runs=args.n_stability_runs,
             stability_seeds=args.stability_seeds,
             compute_confidence_scores=args.compute_confidence_scores,
+            streaming_eval_sample_size=args.streaming_eval_sample_size,
         )
 
     except ConfigError as exc:

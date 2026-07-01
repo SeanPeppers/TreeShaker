@@ -96,10 +96,11 @@ Run the full feature selection pipeline end to end.
 | `mlflow_experiment_name` | string | No | `treeshaker` | MLflow experiment name to log under; only used when `use_mlflow` is `true` |
 | `parallel_feature_evaluation` | boolean | No | `false` | Run the per-feature permutation-importance loop across worker processes instead of sequentially |
 | `n_jobs` | integer | No | `-1` | Worker thread count when `parallel_feature_evaluation` is `true` (-1 = all cores); ignored otherwise |
-| `streaming` | boolean | No | `false` | Opt into the out-of-core / streaming data path: read the CSV in chunks and downcast numeric dtypes per chunk to lower peak memory |
+| `streaming` | boolean | No | `false` | Opt into the out-of-core / streaming data path: read the CSV in chunks, downcast numeric dtypes, and train XGBoost via external-memory `QuantileDMatrix` (CPU only). |
 | `streaming_chunk_size` | integer | No | `100000` | Rows per chunk when `streaming` is `true`; ignored otherwise |
 | `n_stability_runs` | integer | No | `0` | Re-run the pipeline N times with different random seeds; appends `stability_score` and `stability_votes` columns. Use with `skip_tuning=true` for reasonable runtime |
 | `compute_confidence_scores` | boolean | No | `false` | Compute calibrated confidence scores (0.5–1.0) for each feature's recommendation |
+| `streaming_eval_sample_size` | integer | No | `50000` | Maximum rows for SHAP/permutation/MI/residual/leakage analysis when `streaming` is `true`; a random sample is drawn to keep post-training steps tractable. Ignored when `streaming` is `false`. |
 | `config_overrides` | object | No | `null` | Additional Config fields as key-value pairs |
 
 **Returns:** A structured summary including:

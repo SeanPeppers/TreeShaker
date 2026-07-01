@@ -596,6 +596,34 @@ class FeatureSelectionPipeline:
             raise RuntimeError("load_data() must be called first")
         return pd.concat([self.train_data, self.val_data], ignore_index=True)
 
+    def _eval_sample(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Bound a frame to streaming_eval_sample_size rows when streaming.
+
+        The explainability/diagnostic steps (SHAP, permutation importance,
+        mutual information, leakage, residuals) conventionally evaluate on a
+        held-out sample rather than every row, so under out-of-core streaming
+        we cap them to a bounded in-memory sample -- the standard practical
+        answer when the full split is too large to materialize comfortably.
+
+        Returns df unchanged when streaming is off OR when df already fits
+        within the cap, so the non-streaming path is byte-for-byte identical
+        to before. The sample is drawn deterministically with random_seed so
+        results are reproducible.
+        """
+        if not self.config.streaming:
+            return df
+        cap = self.config.streaming_eval_sample_size
+        if len(df) <= cap:
+            return df
+        self.logger.info(
+            "streaming: sampling %d of %d rows for explainability/diagnostics",
+            cap,
+            len(df),
+        )
+        return df.sample(n=cap, random_state=self.config.random_seed).reset_index(
+            drop=True
+        )
+
     def load_data(self) -> None:
         """
         Load the CSV file and split into train, validation, and test sets.
@@ -1024,9 +1052,16 @@ class FeatureSelectionPipeline:
             self.config.task, override=self.config.permutation_metric
         )
 
+        # Under streaming, bound the whole-frame explainability/diagnostic
+        # computations to an in-memory sample (no-op when streaming is off or
+        # the split already fits the cap -- see _eval_sample). The held-out
+        # test set drives importance/permutation/MI/residuals; the combined
+        # frame drives leakage. Sampling is deterministic (random_seed).
+        test_eval = self._eval_sample(self.test_data)
+
         shap_importance = compute_shap_importance(
             model=self.model,
-            data=self.test_data,
+            data=test_eval,
             feature_names=self.feature_names,
             sample_size=self.config.shap_sample_size,
             random_seed=self.config.random_seed,
@@ -1041,7 +1076,7 @@ class FeatureSelectionPipeline:
                 raise RuntimeError(
                     "load_data() must be called before compute_train_importance"
                 )
-            train_val_data = self._train_val_data()
+            train_val_data = self._eval_sample(self._train_val_data())
             shap_importance_train = compute_shap_importance(
                 model=self.model,
                 data=train_val_data,
@@ -1059,7 +1094,7 @@ class FeatureSelectionPipeline:
 
         perm_importance, perm_importance_std = compute_permutation_importance(
             model=self.model,
-            data=self.test_data,
+            data=test_eval,
             target_column=self.config.target_column,
             feature_names=self.feature_names,
             metric_fn=metric_fn,
@@ -1070,7 +1105,7 @@ class FeatureSelectionPipeline:
         )
 
         mi_score = compute_mutual_information(
-            data=self.test_data,
+            data=test_eval,
             target_column=self.config.target_column,
             feature_names=self.feature_names,
             task=self.config.task,
@@ -1103,6 +1138,32 @@ class FeatureSelectionPipeline:
         temporal_structure_warnings: dict[str, list[str]] = {
             name: [] for name in self.feature_names
         }
+        leakage_detector = LeakageDetector(
+            self.config.leakage_config, screening_mode=self.config.leakage_screening
+        )
+        combined_full = pd.concat(
+            [self.train_data, self.val_data, self.test_data], ignore_index=True
+        )
+        # The target-correlation / proxy / multicollinearity checks in
+        # detect() are order-independent statistics, so under streaming they
+        # run on a bounded random sample. detect_temporal_structure, by
+        # contrast, measures order-dependent autocorrelation -- a random
+        # sample would be meaningless -- so it always sees the full, ordered
+        # frame regardless of streaming.
+        combined_data = self._eval_sample(combined_full)
+        leakage_warnings = leakage_detector.detect(
+            df=combined_data,
+            target_column=self.config.target_column,
+            feature_names=self.feature_names,
+            shap_importance=shap_importance,
+            task=self.config.task,
+        )
+        temporal_structure_warnings = leakage_detector.detect_temporal_structure(
+            df=combined_full,
+            feature_names=self.feature_names,
+        )
+
+        # Check for look-ahead leakage if chronological split is enabled
         lookahead_warnings: dict[str, list[str]] = {
             name: [] for name in self.feature_names
         }
@@ -1138,15 +1199,17 @@ class FeatureSelectionPipeline:
         residual_correlation = None
         residual_notes: dict[str, str] = {}
         if self.config.check_residuals:
+            # Use the same sampled rows for both residuals and their
+            # correlation so the residual vector aligns with the feature rows.
             residuals = compute_residuals(
                 model=self.model,
-                data=self.test_data,
+                data=test_eval,
                 target_column=self.config.target_column,
                 feature_names=self.feature_names,
                 task=self.config.task,
             )
             residual_correlation = compute_residual_correlation(
-                data=self.test_data,
+                data=test_eval,
                 feature_names=self.feature_names,
                 residuals=residuals,
             )
