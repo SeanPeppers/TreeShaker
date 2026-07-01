@@ -25,7 +25,11 @@ from .residual_diagnostics import (
     compute_residuals,
     flag_residual_correlated_features,
 )
-from .synthetic_features import SyntheticFeatureSuggestion, suggest_synthetic_features
+from .synthetic_features import (
+    SyntheticFeatureSuggestion,
+    build_injection_frame,
+    suggest_synthetic_features,
+)
 from .utils import (
     check_class_imbalance,
     derive_output_stem,
@@ -1648,6 +1652,45 @@ class FeatureSelectionPipeline:
                     f"{len(self.suggested_features)} synthetic feature"
                     f" suggestions saved to {suggestions_file}"
                 )
+
+                if (
+                    self.config.synthetic_config.dfe_loop_feedback
+                    and self.suggested_features
+                ):
+                    augmented, injected = build_injection_frame(
+                        data=self.test_data,
+                        target_column=self.config.target_column,
+                        suggestions=self.suggested_features,
+                        max_inject=self.config.synthetic_config.dfe_max_inject,
+                    )
+                    if injected:
+                        self.logger.info(
+                            f"DFE loop feedback: injecting {len(injected)}"
+                            f" synthetic features: {injected}"
+                        )
+                        # Mark raw constituents that are outperformed by their
+                        # synthetic replacement as ReplacedBySynthetic.
+                        injected_set = set(injected)
+                        replaced: set[str] = set()
+                        for suggestion in self.suggested_features[
+                            : self.config.synthetic_config.dfe_max_inject
+                        ]:
+                            if suggestion.suggested_name in injected_set:
+                                for raw in (suggestion.feature_a, suggestion.feature_b):
+                                    if raw in set(
+                                        self.results["feature_name"]
+                                    ):
+                                        replaced.add(raw)
+                        if replaced:
+                            mask = self.results["feature_name"].isin(replaced)
+                            self.results.loc[mask, "recommendation"] = (
+                                "ReplacedBySynthetic"
+                            )
+                            self.logger.info(
+                                f"DFE loop feedback: {len(replaced)} raw"
+                                f" features marked ReplacedBySynthetic:"
+                                f" {sorted(replaced)}"
+                            )
         elif self.config.synthetic_config.synthesize_from_interactions:
             self.logger.warning(
                 "synthetic_config.synthesize_from_interactions is True but"
