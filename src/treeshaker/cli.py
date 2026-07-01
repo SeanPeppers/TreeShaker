@@ -450,6 +450,21 @@ def parse_arguments() -> argparse.Namespace:
         " diagnostics when --streaming is set; larger splits are sampled"
         " down to this. Ignored otherwise. (default: 50000)",
     )
+    parser.add_argument(
+        "--n-shadow-probes",
+        type=int,
+        default=0,
+        help="Number of shadow probe columns to inject. (default: 0)",
+    )
+    parser.add_argument(
+        "--shadow-probe-percentile",
+        type=float,
+        default=100.0,
+        help=(
+            "Percentile of probe importances to use as noise threshold (0-100). "
+            "(default: 100.0)"
+        ),
+    )
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging.")
     return parser.parse_args()
 
@@ -557,6 +572,8 @@ def main() -> int:
             stability_seeds=args.stability_seeds,
             compute_confidence_scores=args.compute_confidence_scores,
             streaming_eval_sample_size=args.streaming_eval_sample_size,
+            n_shadow_probes=args.n_shadow_probes,
+            shadow_probe_percentile=args.shadow_probe_percentile,
         )
 
     except ConfigError as exc:
