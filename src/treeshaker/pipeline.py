@@ -1383,8 +1383,7 @@ class FeatureSelectionPipeline:
             ]
             # Collect per-feature recommendations across all runs, including main.
             all_recs: dict[str, list[str]] = {
-                f: [r]
-                for f, r in zip(self.feature_names, recommendations, strict=True)
+                f: [r] for f, r in zip(self.feature_names, recommendations, strict=True)
             }
             self.logger.info(
                 f"Running {self.config.n_stability_runs} additional seeds for"
@@ -1424,9 +1423,7 @@ class FeatureSelectionPipeline:
                 from collections import Counter
 
                 vote_counts = Counter(feat_recs)
-                votes_str = ",".join(
-                    f"{k}:{v}" for k, v in sorted(vote_counts.items())
-                )
+                votes_str = ",".join(f"{k}:{v}" for k, v in sorted(vote_counts.items()))
                 stability_scores.append(round(score, 4))
                 stability_votes_list.append(votes_str)
 
