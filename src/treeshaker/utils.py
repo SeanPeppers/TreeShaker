@@ -371,9 +371,7 @@ def load_csv(
 
     try:
         if streaming and use_polars:
-            logger.info(
-                f"Polars streaming read: {streaming_chunk_size}-row batches"
-            )
+            logger.info(f"Polars streaming read: {streaming_chunk_size}-row batches")
             df = _read_csv_polars_streaming(filepath, streaming_chunk_size)
         elif streaming:
             logger.info(
