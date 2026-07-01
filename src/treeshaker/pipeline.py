@@ -1531,7 +1531,7 @@ class FeatureSelectionPipeline:
             probe_rows = self.results[
                 self.results["feature_name"].str.startswith("__shadow_probe_")
             ]
-            probe_importances = probe_rows["shap_importance"].values
+            probe_importances = probe_rows["shap_importance"].to_numpy()
             probe_threshold = compute_probe_threshold(
                 probe_importances, self.config.shadow_probe_percentile
             )
