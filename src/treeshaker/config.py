@@ -374,10 +374,18 @@ class Config:
     streaming booster falls back to CPU with a warning (the GPU is still used
     for the in-memory path when streaming is off).
 
-    Later stages additionally switch the explainability/diagnostic steps
-    (SHAP, permutation importance, mutual information, leakage, residuals)
-    onto a bounded in-memory sample (see `shap_sample_size` /
-    `large_dataset_sample_threshold`) rather than the full dataset.
+    Stage 3 (sample-based explainability/diagnostics): when streaming, the
+    explainability and diagnostic steps that conventionally evaluate on a
+    held-out sample anyway -- SHAP importance, permutation importance, mutual
+    information, leakage/multicollinearity checks, and residual diagnostics --
+    are computed on a bounded in-memory sample of at most
+    `streaming_eval_sample_size` rows (drawn deterministically with
+    random_seed) rather than the full split. This mirrors standard practice:
+    XGBoost trains out-of-core, but SHAP/permutation importance are estimated
+    on a representative sample. The recommendation logic is otherwise
+    unchanged. `custom_model` is incompatible with streaming and raises a
+    clear ConfigError (a user-supplied estimator can't use XGBoost's
+    external-memory DataIter).
 
     Off by default -- the default in-memory path for small/medium datasets
     is completely unchanged unless this is explicitly enabled."""
@@ -419,6 +427,17 @@ class Config:
     compute_confidence_scores: bool = False
     """If True, compute calibrated confidence scores for each feature's
     importance and recommendation. Off by default."""
+    streaming_eval_sample_size: int = 50_000
+    """Maximum number of rows used for the explainability/diagnostic steps
+    (SHAP, permutation importance, mutual information, leakage,
+    multicollinearity, residuals) when streaming=True. If a split (or the
+    combined leakage frame) exceeds this, a deterministic random sample of
+    this many rows (drawn with random_seed) is used instead, bounding peak
+    memory for these whole-frame computations the way out-of-core training
+    bounds the fit. Importance/leakage are still reported over the full
+    feature set; only the row count used to estimate them is capped. Ignored
+    when streaming=False (the full splits are used, exactly as before). Must
+    be >= 1. Default 50_000."""
 
     def __post_init__(self) -> None:
         """Validate configuration values."""
@@ -496,6 +515,17 @@ class Config:
                     f"{self.n_stability_runs} elements, got"
                     f" {len(self.stability_seeds)}."
                 )
+        _require_at_least(
+            "streaming_eval_sample_size", self.streaming_eval_sample_size, 1
+        )
+        if self.streaming and self.custom_model is not None:
+            raise ConfigError(
+                "streaming=True is incompatible with custom_model: a"
+                " user-supplied estimator cannot be trained through XGBoost's"
+                " external-memory DataIter (the out-of-core training path is"
+                " XGBoost-specific). Disable streaming to use custom_model, or"
+                " drop custom_model to use the streaming XGBoost path."
+            )
         if self.shap_sample_size is not None:
             _require_at_least("shap_sample_size", self.shap_sample_size, 1)
         _require_at_least(

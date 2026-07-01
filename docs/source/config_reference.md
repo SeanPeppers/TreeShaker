@@ -134,10 +134,11 @@ See [SyntheticConfig](#syntheticconfig) below.
 |---|---|---|---|---|
 | `parallel_feature_evaluation` | `--parallel-feature-evaluation` | bool | `False` | Run the per-feature permutation-importance loop across worker processes via joblib instead of sequentially |
 | `n_jobs` | `--n-jobs` | int | `-1` | Worker count when `parallel_feature_evaluation` is True (-1 = use all available cores); ignored otherwise |
-| `streaming` | `--streaming` | bool | `False` | Opt into the out-of-core / streaming data path: read the CSV in chunks and downcast numeric dtypes per chunk to lower peak memory |
+| `streaming` | `--streaming` | bool | `False` | Opt into the out-of-core / streaming data path: read the CSV in chunks, downcast numeric dtypes per chunk to reduce peak memory, and train XGBoost via external-memory `QuantileDMatrix` (CPU only). |
 | `streaming_chunk_size` | `--streaming-chunk-size` | int | `100000` | Rows per chunk when `streaming` is True; ignored otherwise |
 | `n_stability_runs` | `--n-stability-runs` | int | `0` | Re-run the pipeline N times with different random seeds; appends `stability_score` and `stability_votes` columns. 0 = disabled |
 | `stability_seeds` | `--stability-seeds` | list[int] | `null` | Explicit seeds for stability runs (length must equal `n_stability_runs`); auto-derived when null |
+| `streaming_eval_sample_size` | `--streaming-eval-sample-size` | int | `50000` | Maximum rows used for SHAP, permutation importance, mutual information, residual diagnostics, and leakage detection when `streaming` is True. Rows are drawn as a random sample so post-training analysis stays tractable on large datasets. Order-dependent checks (temporal structure detection) always use the full dataset. Ignored when `streaming` is False. |
 
 ### Experiment tracking (opt-in)
 
