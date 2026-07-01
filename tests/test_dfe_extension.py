@@ -93,7 +93,9 @@ def test_product_and_ratio_both_suggested():
         mi_threshold=0.0,
         operators=["product", "ratio"],
     )
-    suggestions = suggest_synthetic_features(data, "y", interactions, "regression", 42, cfg)
+    suggestions = suggest_synthetic_features(
+        data, "y", interactions, "regression", 42, cfg
+    )
     operators = {s.operator for s in suggestions}
     assert "product" in operators
 
@@ -120,7 +122,9 @@ def test_categorical_interaction_suggested():
         mi_threshold=0.0,
         operators=["product"],
     )
-    suggestions = suggest_synthetic_features(data, "y", interactions, "regression", 42, cfg)
+    suggestions = suggest_synthetic_features(
+        data, "y", interactions, "regression", 42, cfg
+    )
     assert len(suggestions) >= 1
     assert suggestions[0].feature_a == "cat" or suggestions[0].feature_b == "cat"
 

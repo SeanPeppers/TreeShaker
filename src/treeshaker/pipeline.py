@@ -1677,9 +1677,7 @@ class FeatureSelectionPipeline:
                         ]:
                             if suggestion.suggested_name in injected_set:
                                 for raw in (suggestion.feature_a, suggestion.feature_b):
-                                    if raw in set(
-                                        self.results["feature_name"]
-                                    ):
+                                    if raw in set(self.results["feature_name"]):
                                         replaced.add(raw)
                         if replaced:
                             mask = self.results["feature_name"].isin(replaced)
