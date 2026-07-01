@@ -1027,7 +1027,8 @@ class FeatureSelectionPipeline:
 
             If config.compute_shap_interactions is True and
             config.synthetic_config.synthesize_from_interactions is True,
-            candidate pairwise-product features are derived from the
+            candidate derived features (pairwise products and ratios, plus
+            target-mean-encoded categorical interactions) are derived from the
             strongest SHAP interactions and scored by mutual information
             against the target (see synthetic_features.py). Candidates
             exceeding config.synthetic_config.mi_threshold are saved to

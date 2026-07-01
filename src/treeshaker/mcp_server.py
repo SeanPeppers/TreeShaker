@@ -225,8 +225,11 @@ def run_pipeline(
         check_residuals: Compute residual-correlation diagnostics (opt-in).
         compute_shap_interactions: Compute pairwise SHAP interaction values
             (opt-in, expensive).
-        synthesize_features: Suggest synthetic pairwise-product features
-            from SHAP interactions (opt-in; implies compute_shap_interactions).
+        synthesize_features: Suggest synthetic derived features (pairwise
+            products and ratios, plus target-mean-encoded categorical
+            interactions) from SHAP interactions (opt-in, advisory only;
+            implies compute_shap_interactions). The auto-injecting
+            dfe_loop_feedback path is Python-API-only and not exposed here.
         n_bootstrap: Number of bootstrap resamples for importance stability
             (0 disables).
         device: XGBoost training device: "auto", "cuda", or "cpu".

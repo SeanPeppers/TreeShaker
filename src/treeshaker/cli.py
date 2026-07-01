@@ -182,9 +182,11 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--synthesize-features",
         action="store_true",
-        help="Suggest candidate pairwise-product features from the"
+        help="Suggest candidate derived features (pairwise products and"
+        " ratios, plus target-mean-encoded categorical interactions) from the"
         " strongest SHAP interactions, scored by mutual information"
-        " (opt-in, advisory only -- never auto-added to the model). Requires"
+        " (opt-in, advisory only -- never auto-added to the model; the"
+        " auto-injecting dfe_loop_feedback path is Python-API-only). Requires"
         " --shap-interactions to also be set. Saves candidates exceeding"
         " --synthesis-mi-threshold to <output_stem>_suggested_features.csv.",
     )
