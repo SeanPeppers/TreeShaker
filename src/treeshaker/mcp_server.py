@@ -268,8 +268,10 @@ def run_pipeline(
         streaming_eval_sample_size: Max rows used for the SHAP/permutation/MI/
             leakage/residual diagnostics when streaming is True; larger splits
             are sampled down to this. Ignored otherwise.
-        n_shadow_probes: Number of shadow probe columns to inject (0 = disabled, suggested 5-20).
-        shadow_probe_percentile: Percentile of probe importances to use as noise threshold (0-100, default 100.0/max).
+        n_shadow_probes: Number of shadow probe columns to inject (0 = disabled,
+            suggested 5-20).
+        shadow_probe_percentile: Percentile of probe importances to use as noise
+            threshold (0-100, default 100.0/max).
         config_overrides: Optional dict of additional Config field overrides
             (e.g. {"shap_importance_threshold": 0.02}) for anything not
             covered by the explicit kwargs above.

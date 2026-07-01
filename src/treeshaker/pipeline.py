@@ -1033,6 +1033,7 @@ class FeatureSelectionPipeline:
 
         if self.config.n_shadow_probes > 0:
             from .shadow_probes import generate_shadow_probes
+
             train_probes = generate_shadow_probes(
                 self.train_data[self.feature_names],
                 self.config.n_shadow_probes,
@@ -1522,16 +1523,29 @@ class FeatureSelectionPipeline:
 
         full_feature_names = list(self.feature_names)
         if self.config.n_shadow_probes > 0:
-            from .shadow_probes import compute_probe_threshold, add_shadow_probe_warnings
+            from .shadow_probes import (
+                add_shadow_probe_warnings,
+                compute_probe_threshold,
+            )
 
-            probe_rows = self.results[self.results["feature_name"].str.startswith("__shadow_probe_")]
+            probe_rows = self.results[
+                self.results["feature_name"].str.startswith("__shadow_probe_")
+            ]
             probe_importances = probe_rows["shap_importance"].values
-            probe_threshold = compute_probe_threshold(probe_importances, self.config.shadow_probe_percentile)
+            probe_threshold = compute_probe_threshold(
+                probe_importances, self.config.shadow_probe_percentile
+            )
 
-            self.results = self.results[~self.results["feature_name"].str.startswith("__shadow_probe_")].reset_index(drop=True)
+            self.results = self.results[
+                ~self.results["feature_name"].str.startswith("__shadow_probe_")
+            ].reset_index(drop=True)
             self.results = add_shadow_probe_warnings(self.results, probe_threshold)
 
-            real_indices = [i for i, name in enumerate(self.feature_names) if not name.startswith("__shadow_probe_")]
+            real_indices = [
+                i
+                for i, name in enumerate(self.feature_names)
+                if not name.startswith("__shadow_probe_")
+            ]
             self.feature_names = [self.feature_names[i] for i in real_indices]
             shap_importance = shap_importance[real_indices]
 
@@ -1567,8 +1581,8 @@ class FeatureSelectionPipeline:
             )
             if self.interactions is not None and self.config.n_shadow_probes > 0:
                 self.interactions = self.interactions[
-                    ~self.interactions["feature_a"].str.startswith("__shadow_probe_") &
-                    ~self.interactions["feature_b"].str.startswith("__shadow_probe_")
+                    ~self.interactions["feature_a"].str.startswith("__shadow_probe_")
+                    & ~self.interactions["feature_b"].str.startswith("__shadow_probe_")
                 ].reset_index(drop=True)
             stem = derive_output_stem(self.config.output_file)
             interactions_file = f"{stem}_interactions.csv"

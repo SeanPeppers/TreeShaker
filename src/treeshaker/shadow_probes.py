@@ -40,9 +40,7 @@ def generate_shadow_probes(
     return pd.DataFrame(probes, index=X.index)
 
 
-def compute_probe_threshold(
-    probe_importances: np.ndarray, percentile: float
-) -> float:
+def compute_probe_threshold(probe_importances: np.ndarray, percentile: float) -> float:
     """Compute the noise-floor threshold from probe importances.
 
     Args:

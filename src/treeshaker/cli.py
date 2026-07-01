@@ -460,7 +460,10 @@ def parse_arguments() -> argparse.Namespace:
         "--shadow-probe-percentile",
         type=float,
         default=100.0,
-        help="Percentile of probe importances to use as noise threshold (0-100). (default: 100.0)",
+        help=(
+            "Percentile of probe importances to use as noise threshold (0-100). "
+            "(default: 100.0)"
+        ),
     )
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging.")
     return parser.parse_args()

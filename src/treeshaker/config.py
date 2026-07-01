@@ -441,7 +441,8 @@ class Config:
     n_shadow_probes: int = 0
     """Number of shadow probe columns to inject (0 = disabled, suggested 5-20)."""
     shadow_probe_percentile: float = 100.0
-    """Percentile of probe importances to use as noise threshold (0-100, default 100.0/max)."""
+    """Percentile of probe importances to use as noise threshold
+    (0-100, default 100.0/max)."""
 
     def __post_init__(self) -> None:
         """Validate configuration values."""
