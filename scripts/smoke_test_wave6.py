@@ -28,7 +28,7 @@ from sklearn.datasets import fetch_california_housing, fetch_openml
 
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
 
-from treeshaker.config import Config
+from treeshaker.config import Config, OptunaConfig
 from treeshaker.pipeline import FeatureSelectionPipeline
 from treeshaker.synthetic_features import SyntheticConfig
 
@@ -90,7 +90,7 @@ def run_checks(name: str, csv_path: str, target_col: str, task: str) -> None:
             target_column=target_col,
             task=task,
             skip_tuning=True,
-            n_trials=1,
+            optuna_config=OptunaConfig(n_trials=1),
             n_shadow_probes=10,
         )
         res = FeatureSelectionPipeline(cfg).run()
@@ -115,7 +115,7 @@ def run_checks(name: str, csv_path: str, target_col: str, task: str) -> None:
             target_column=target_col,
             task=task,
             skip_tuning=True,
-            n_trials=1,
+            optuna_config=OptunaConfig(n_trials=1),
             collinearity_threshold=0.7,
         )
         res = FeatureSelectionPipeline(cfg).run()
@@ -139,7 +139,7 @@ def run_checks(name: str, csv_path: str, target_col: str, task: str) -> None:
             target_column=target_col,
             task=task,
             skip_tuning=True,
-            n_trials=1,
+            optuna_config=OptunaConfig(n_trials=1),
             synthetic_config=SyntheticConfig(
                 synthesize_from_interactions=True,
                 interaction_top_n=3,
@@ -166,7 +166,7 @@ def run_checks(name: str, csv_path: str, target_col: str, task: str) -> None:
             target_column=target_col,
             task=task,
             skip_tuning=True,
-            n_trials=1,
+            optuna_config=OptunaConfig(n_trials=1),
             synthetic_config=SyntheticConfig(
                 synthesize_from_interactions=True,
                 interaction_top_n=3,
