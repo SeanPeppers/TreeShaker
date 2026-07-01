@@ -84,6 +84,8 @@ def _build_config(
     streaming_eval_sample_size: int = 50_000,
     n_shadow_probes: int = 0,
     shadow_probe_percentile: float = 100.0,
+    collinearity_threshold: float = 0.0,
+    collinearity_method: str = "spearman",
     config_overrides: dict | None = None,
 ) -> Config:
     """Build a Config from run_pipeline's explicit kwargs plus generic overrides.
@@ -149,6 +151,8 @@ def _build_config(
         "streaming_eval_sample_size": streaming_eval_sample_size,
         "n_shadow_probes": n_shadow_probes,
         "shadow_probe_percentile": shadow_probe_percentile,
+        "collinearity_threshold": collinearity_threshold,
+        "collinearity_method": collinearity_method,
     }
 
     if config_overrides:
@@ -204,6 +208,8 @@ def run_pipeline(
     streaming_eval_sample_size: int = 50_000,
     n_shadow_probes: int = 0,
     shadow_probe_percentile: float = 100.0,
+    collinearity_threshold: float = 0.0,
+    collinearity_method: str = "spearman",
     config_overrides: dict | None = None,
 ) -> dict:
     """Run the full TreeShaker feature selection pipeline end to end.

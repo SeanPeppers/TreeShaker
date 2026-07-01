@@ -396,6 +396,16 @@ class Config:
     the cost of more overhead. Ignored when streaming=False. Must be >= 1.
     Default 100_000."""
 
+    collinearity_threshold: float = 0.0
+    """Spearman |r| threshold for grouping correlated features. 0 = disabled.
+    When > 0 (e.g. 0.85), features with |correlation| >= threshold are clustered.
+    Only the highest-SHAP representative per cluster is kept; others get
+    recommendation='CollinearDuplicate'. Prevents attribution dilution."""
+
+    collinearity_method: str = "spearman"
+    """Correlation method for collinearity clustering: 'spearman' or 'pearson'.
+    Ignored when collinearity_threshold=0."""
+
     use_polars: bool = False
     """If True, use Polars instead of pandas to read the input CSV. Polars
     parses CSV significantly faster than pandas (Rust-based, multi-threaded)
@@ -562,3 +572,7 @@ class Config:
                 "shadow_probe_percentile must be in [0, 100], got"
                 f" {self.shadow_probe_percentile}"
             )
+        if not (0.0 <= self.collinearity_threshold <= 1.0):
+            raise ConfigError("collinearity_threshold must be between 0.0 and 1.0")
+        if self.collinearity_method not in ("spearman", "pearson"):
+            raise ConfigError("collinearity_method must be 'spearman' or 'pearson'")

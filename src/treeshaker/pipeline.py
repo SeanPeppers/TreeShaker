@@ -3,7 +3,7 @@
 import dataclasses
 import logging
 from collections import defaultdict
-from typing import Any
+from typing import Any, Literal, cast
 
 import numpy as np
 import pandas as pd
@@ -595,6 +595,13 @@ class FeatureSelectionPipeline:
         if self.train_data is None or self.val_data is None:
             raise RuntimeError("load_data() must be called first")
         return pd.concat([self.train_data, self.val_data], ignore_index=True)
+
+    @property
+    def X_train(self) -> pd.DataFrame | None:
+        """Return training features DataFrame."""
+        if self.train_data is None:
+            return None
+        return self.train_data[self.feature_names]
 
     def _eval_sample(self, df: pd.DataFrame) -> pd.DataFrame:
         """Bound a frame to streaming_eval_sample_size rows when streaming.
@@ -1461,6 +1468,40 @@ class FeatureSelectionPipeline:
             .sort_values("shap_importance", ascending=False)
             .reset_index(drop=True)
         )
+
+        if self.config.collinearity_threshold > 0:
+            from .collinearity import (
+                cluster_correlated_features,
+                select_cluster_representative,
+            )
+
+            clusters = cluster_correlated_features(
+                self.X_train if self.X_train is not None else pd.DataFrame(),
+                self.feature_names,
+                self.config.collinearity_threshold,
+                cast(Literal["spearman", "pearson"], self.config.collinearity_method),
+            )
+            shap_map = dict(
+                zip(
+                    self.results["feature_name"],
+                    self.results["shap_importance"],
+                    strict=True,
+                )
+            )
+            cluster_labels: dict[str, str] = {}
+            duplicate_features: set[str] = set()
+            for i, cluster in enumerate(clusters):
+                label = "singleton" if len(cluster) == 1 else f"cluster_{i}"
+                rep = select_cluster_representative(cluster, shap_map)
+                for feat in cluster:
+                    cluster_labels[feat] = label
+                    if feat != rep and len(cluster) > 1:
+                        duplicate_features.add(feat)
+            self.results["collinearity_cluster"] = self.results["feature_name"].map(
+                cluster_labels
+            )
+            mask = self.results["feature_name"].isin(duplicate_features)
+            self.results.loc[mask, "recommendation"] = "CollinearDuplicate"
 
         if self.config.n_stability_runs > 0:
             seeds = self.config.stability_seeds or [
