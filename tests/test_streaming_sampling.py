@@ -98,6 +98,15 @@ def test_cli_streaming_eval_sample_size_flag():
             "--streaming",
             "--streaming-eval-sample-size",
             "1000",
+            "--input",
+            "data.csv",
+            "--target",
+            "y",
+            "--task",
+            "binary",
+            "--streaming",
+            "--streaming-eval-sample-size",
+            "1000",
         ],
     ):
         args = parse_arguments()
