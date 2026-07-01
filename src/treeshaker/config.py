@@ -402,7 +402,7 @@ class Config:
     Only the highest-SHAP representative per cluster is kept; others get
     recommendation='CollinearDuplicate'. Prevents attribution dilution."""
 
-    collinearity_method: str = 'spearman'
+    collinearity_method: str = "spearman"
     """Correlation method for collinearity clustering: 'spearman' or 'pearson'.
     Ignored when collinearity_threshold=0."""
 
@@ -573,6 +573,6 @@ class Config:
                 f" {self.shadow_probe_percentile}"
             )
         if not (0.0 <= self.collinearity_threshold <= 1.0):
-            raise ConfigError('collinearity_threshold must be between 0.0 and 1.0')
-        if self.collinearity_method not in ('spearman', 'pearson'):
+            raise ConfigError("collinearity_threshold must be between 0.0 and 1.0")
+        if self.collinearity_method not in ("spearman", "pearson"):
             raise ConfigError("collinearity_method must be 'spearman' or 'pearson'")

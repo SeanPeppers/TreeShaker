@@ -1,4 +1,5 @@
 """Collinearity-aware grouped feature selection."""
+
 from __future__ import annotations
 
 from typing import Literal
