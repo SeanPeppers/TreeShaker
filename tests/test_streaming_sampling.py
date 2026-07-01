@@ -89,11 +89,15 @@ def test_cli_streaming_eval_sample_size_flag():
         "sys.argv",
         [
             "treeshaker",
-            "--input", "data.csv",
-            "--target", "y",
-            "--task", "binary",
+            "--input",
+            "data.csv",
+            "--target",
+            "y",
+            "--task",
+            "binary",
             "--streaming",
-            "--streaming-eval-sample-size", "1000",
+            "--streaming-eval-sample-size",
+            "1000",
         ],
     ):
         args = parse_arguments()

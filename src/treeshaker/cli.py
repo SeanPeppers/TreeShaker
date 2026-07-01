@@ -441,6 +441,8 @@ def parse_arguments() -> argparse.Namespace:
         action="store_true",
         help="Compute calibrated confidence scores (0-1) for each feature's"
         " recommendation.",
+    )
+    parser.add_argument(
         "--streaming-eval-sample-size",
         type=int,
         default=50_000,
