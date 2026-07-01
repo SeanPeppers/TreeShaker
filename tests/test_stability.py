@@ -65,22 +65,40 @@ def test_stability_seeds_correct_length():
 
 
 def test_cli_n_stability_runs():
-    args = parse_arguments.__wrapped__(
-        [
-            "--input", "a.csv", "--target", "t", "--task", "binary",
-            "--n-stability-runs", "3",
-        ]
-    ) if hasattr(parse_arguments, "__wrapped__") else None
+    args = (
+        parse_arguments.__wrapped__(
+            [
+                "--input",
+                "a.csv",
+                "--target",
+                "t",
+                "--task",
+                "binary",
+                "--n-stability-runs",
+                "3",
+            ]
+        )
+        if hasattr(parse_arguments, "__wrapped__")
+        else None
+    )
     # parse_arguments reads sys.argv — use monkeypatching via pytest
     import sys
+
     old = sys.argv
     sys.argv = [
         "treeshaker",
-        "--input", "a.csv",
-        "--target", "t",
-        "--task", "binary",
-        "--n-stability-runs", "3",
-        "--stability-seeds", "1", "2", "3",
+        "--input",
+        "a.csv",
+        "--target",
+        "t",
+        "--task",
+        "binary",
+        "--n-stability-runs",
+        "3",
+        "--stability-seeds",
+        "1",
+        "2",
+        "3",
     ]
     try:
         args = parse_arguments()
@@ -140,6 +158,7 @@ def test_stability_columns_present_when_enabled(binary_csv, tmp_path):
 
     # With n_stability_runs=2, total votes per feature = 3 (main + 2 extra).
     import re
+
     for votes in results["stability_votes"]:
         total = sum(int(n) for n in re.findall(r":(\d+)", votes))
         assert total == 3
