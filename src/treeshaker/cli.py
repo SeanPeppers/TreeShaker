@@ -436,6 +436,12 @@ def parse_arguments() -> argparse.Namespace:
         help="Explicit seeds for stability runs. Must match --n-stability-runs."
         " Auto-derived from --random-seed when omitted.",
     )
+    parser.add_argument(
+        "--compute-confidence-scores",
+        action="store_true",
+        help="Compute calibrated confidence scores (0-1) for each feature's"
+        " recommendation.",
+    )
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging.")
     return parser.parse_args()
 
@@ -541,6 +547,7 @@ def main() -> int:
             streaming_chunk_size=args.streaming_chunk_size,
             n_stability_runs=args.n_stability_runs,
             stability_seeds=args.stability_seeds,
+            compute_confidence_scores=args.compute_confidence_scores,
         )
 
     except ConfigError as exc:
