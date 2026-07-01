@@ -1260,6 +1260,17 @@ class FeatureSelectionPipeline:
             "reason": reasons,
         }
 
+        if self.config.compute_confidence_scores:
+            from .confidence import compute_confidence_scores
+
+            result_columns["confidence_score"] = compute_confidence_scores(
+                shap_importance=shap_importance,
+                perm_importance=perm_importance,
+                recommendations=result_columns["recommendation"],
+                shap_threshold=self.config.shap_importance_threshold,
+                perm_threshold=self.config.permutation_importance_threshold,
+            )
+
         bootstrap_importances = None
         if self.config.bootstrap_config.n_bootstrap > 0:
             bootstrap_importances = self._run_bootstrap_importance(best_params)
@@ -1275,6 +1286,13 @@ class FeatureSelectionPipeline:
                 )
                 result_columns["recommendation"] = recommendations
                 result_columns["reason"] = reasons
+                if (
+                    self.config.compute_confidence_scores
+                    and "confidence_score" in result_columns
+                ):
+                    for i, rec in enumerate(recommendations):
+                        if rec == "Caution":
+                            result_columns["confidence_score"][i] = 0.5
 
         if self.config.check_residuals:
             result_columns["residual_correlation"] = residual_correlation

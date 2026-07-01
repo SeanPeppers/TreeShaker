@@ -80,6 +80,7 @@ def _build_config(
     streaming: bool = False,
     streaming_chunk_size: int = 100_000,
     n_stability_runs: int = 0,
+    compute_confidence_scores: bool = False,
     config_overrides: dict | None = None,
 ) -> Config:
     """Build a Config from run_pipeline's explicit kwargs plus generic overrides.
@@ -141,6 +142,7 @@ def _build_config(
         "streaming": streaming,
         "streaming_chunk_size": streaming_chunk_size,
         "n_stability_runs": n_stability_runs,
+        "compute_confidence_scores": compute_confidence_scores,
     }
 
     if config_overrides:
@@ -192,6 +194,7 @@ def run_pipeline(
     streaming: bool = False,
     streaming_chunk_size: int = 100_000,
     n_stability_runs: int = 0,
+    compute_confidence_scores: bool = False,
     config_overrides: dict | None = None,
 ) -> dict:
     """Run the full TreeShaker feature selection pipeline end to end.
@@ -251,6 +254,8 @@ def run_pipeline(
             random seeds and append stability_score / stability_votes columns.
             0 = disabled (default). Use with skip_tuning=True for reasonable
             runtime.
+        compute_confidence_scores: Compute calibrated confidence scores (0-1)
+            for each feature's recommendation (opt-in).
         config_overrides: Optional dict of additional Config field overrides
             (e.g. {"shap_importance_threshold": 0.02}) for anything not
             covered by the explicit kwargs above.
@@ -299,6 +304,7 @@ def run_pipeline(
             streaming=streaming,
             streaming_chunk_size=streaming_chunk_size,
             n_stability_runs=n_stability_runs,
+            compute_confidence_scores=compute_confidence_scores,
             config_overrides=config_overrides,
         )
 

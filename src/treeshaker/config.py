@@ -388,6 +388,13 @@ class Config:
     the cost of more overhead. Ignored when streaming=False. Must be >= 1.
     Default 100_000."""
 
+    use_polars: bool = False
+    """If True, use Polars instead of pandas to read the input CSV. Polars
+    parses CSV significantly faster than pandas (Rust-based, multi-threaded)
+    and uses less peak memory during the parse. The resulting DataFrame is
+    converted to pandas after loading so the rest of the pipeline is
+    unchanged. Off by default; requires ``pip install treeshaker[polars]``.
+    Compatible with ``streaming=True``."""
     n_stability_runs: int = 0
     """Number of additional pipeline runs (with different random seeds) used to
     estimate per-feature recommendation stability. 0 = disabled (default).
@@ -408,6 +415,10 @@ class Config:
     have exactly `n_stability_runs` elements when set. When None (default),
     seeds are auto-derived as [random_seed + 1, random_seed + 2, ...] up to
     `n_stability_runs`. Ignored when n_stability_runs=0."""
+
+    compute_confidence_scores: bool = False
+    """If True, compute calibrated confidence scores for each feature's
+    importance and recommendation. Off by default."""
 
     def __post_init__(self) -> None:
         """Validate configuration values."""
