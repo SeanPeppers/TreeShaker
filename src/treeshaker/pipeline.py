@@ -1358,6 +1358,68 @@ class FeatureSelectionPipeline:
             .reset_index(drop=True)
         )
 
+        if self.config.n_stability_runs > 0:
+            seeds = self.config.stability_seeds or [
+                self.config.random_seed + i + 1
+                for i in range(self.config.n_stability_runs)
+            ]
+            # Collect per-feature recommendations across all runs, including main.
+            all_recs: dict[str, list[str]] = {
+                f: [r]
+                for f, r in zip(self.feature_names, recommendations, strict=True)
+            }
+            self.logger.info(
+                f"Running {self.config.n_stability_runs} additional seeds for"
+                " recommendation stability analysis..."
+            )
+            import dataclasses
+
+            for seed in seeds:
+                seed_cfg = dataclasses.replace(
+                    self.config,
+                    random_seed=seed,
+                    n_stability_runs=0,  # prevent recursion
+                    stability_seeds=None,
+                )
+                seed_results = FeatureSelectionPipeline(seed_cfg).run()
+                seed_rec_map = dict(
+                    zip(
+                        seed_results["feature_name"],
+                        seed_results["recommendation"],
+                        strict=True,
+                    )
+                )
+                for feat in self.feature_names:
+                    all_recs[feat].append(seed_rec_map.get(feat, "Unknown"))
+
+            # Build stability_score + stability_votes aligned to results order.
+            feature_order = self.results["feature_name"].tolist()
+            stability_scores = []
+            stability_votes_list = []
+            for feat in feature_order:
+                feat_recs = all_recs[feat]
+                final_rec = self.results.loc[
+                    self.results["feature_name"] == feat, "recommendation"
+                ].iloc[0]
+                agree = sum(1 for r in feat_recs if r == final_rec)
+                score = agree / len(feat_recs)
+                from collections import Counter
+
+                vote_counts = Counter(feat_recs)
+                votes_str = ",".join(
+                    f"{k}:{v}" for k, v in sorted(vote_counts.items())
+                )
+                stability_scores.append(round(score, 4))
+                stability_votes_list.append(votes_str)
+
+            self.results["stability_score"] = stability_scores
+            self.results["stability_votes"] = stability_votes_list
+            self.logger.info(
+                f"Stability analysis done:"
+                f" {sum(1 for s in stability_scores if s == 1.0)} of"
+                f" {len(stability_scores)} features unanimous across all seeds."
+            )
+
         save_results(
             results=self.results,
             output_file=self.config.output_file,

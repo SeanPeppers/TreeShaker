@@ -135,6 +135,8 @@ See [SyntheticConfig](#syntheticconfig) below.
 | `n_jobs` | `--n-jobs` | int | `-1` | Worker count when `parallel_feature_evaluation` is True (-1 = use all available cores); ignored otherwise |
 | `streaming` | `--streaming` | bool | `False` | Opt into the out-of-core / streaming data path: read the CSV in chunks and downcast numeric dtypes per chunk to lower peak memory |
 | `streaming_chunk_size` | `--streaming-chunk-size` | int | `100000` | Rows per chunk when `streaming` is True; ignored otherwise |
+| `n_stability_runs` | `--n-stability-runs` | int | `0` | Re-run the pipeline N times with different random seeds; appends `stability_score` and `stability_votes` columns. 0 = disabled |
+| `stability_seeds` | `--stability-seeds` | list[int] | `null` | Explicit seeds for stability runs (length must equal `n_stability_runs`); auto-derived when null |
 
 ### Experiment tracking (opt-in)
 

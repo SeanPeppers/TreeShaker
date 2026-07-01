@@ -79,6 +79,7 @@ def _build_config(
     n_jobs: int = -1,
     streaming: bool = False,
     streaming_chunk_size: int = 100_000,
+    n_stability_runs: int = 0,
     config_overrides: dict | None = None,
 ) -> Config:
     """Build a Config from run_pipeline's explicit kwargs plus generic overrides.
@@ -139,6 +140,7 @@ def _build_config(
         "n_jobs": n_jobs,
         "streaming": streaming,
         "streaming_chunk_size": streaming_chunk_size,
+        "n_stability_runs": n_stability_runs,
     }
 
     if config_overrides:
@@ -189,6 +191,7 @@ def run_pipeline(
     n_jobs: int = -1,
     streaming: bool = False,
     streaming_chunk_size: int = 100_000,
+    n_stability_runs: int = 0,
     config_overrides: dict | None = None,
 ) -> dict:
     """Run the full TreeShaker feature selection pipeline end to end.
@@ -244,6 +247,10 @@ def run_pipeline(
             dtypes per chunk to lower peak memory (opt-in, off by default).
         streaming_chunk_size: Rows per chunk when streaming is True. Ignored
             otherwise.
+        n_stability_runs: Re-run the pipeline this many times with different
+            random seeds and append stability_score / stability_votes columns.
+            0 = disabled (default). Use with skip_tuning=True for reasonable
+            runtime.
         config_overrides: Optional dict of additional Config field overrides
             (e.g. {"shap_importance_threshold": 0.02}) for anything not
             covered by the explicit kwargs above.
@@ -291,6 +298,7 @@ def run_pipeline(
             n_jobs=n_jobs,
             streaming=streaming,
             streaming_chunk_size=streaming_chunk_size,
+            n_stability_runs=n_stability_runs,
             config_overrides=config_overrides,
         )
 

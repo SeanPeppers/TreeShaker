@@ -153,6 +153,8 @@ treeshaker --input <file> --target <column> --task <type> [options]
 | `--n-jobs INT` | `-1` | Worker thread count when `--parallel-feature-evaluation` is set (-1 = all available cores); ignored otherwise |
 | `--streaming` | off | Opt into the out-of-core / streaming data path: read the CSV in chunks and downcast numeric dtypes per chunk to lower peak memory |
 | `--streaming-chunk-size INT` | `100000` | Rows per chunk when `--streaming` is set; ignored otherwise |
+| `--n-stability-runs INT` | `0` | Re-run the pipeline N times with different random seeds; appends `stability_score` and `stability_votes` columns. Use with `--skip-tuning` for reasonable runtime |
+| `--stability-seeds INT [INT ...]` | auto | Explicit seeds for stability runs (must match `--n-stability-runs`); auto-derived from `--random-seed` when omitted |
 
 ## Experiment tracking (opt-in)
 
