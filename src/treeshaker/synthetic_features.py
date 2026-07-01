@@ -87,23 +87,58 @@ class SyntheticFeatureSuggestion:
     mi_score: float
 
 
-def _encode_for_interaction(series: pd.Series, target: pd.Series) -> pd.Series | None:
+def _encode_for_interaction(
+    series: pd.Series,
+    target: pd.Series,
+    means: pd.Series | None = None,
+) -> pd.Series | None:
     """Return a numeric series suitable for interaction feature construction.
 
     For numeric dtypes: returns the series as-is.
     For categorical/object dtypes: returns target-mean encoding per category
-    (the mean of ``target`` within each category level). Returns None if
-    encoding produces all-NaN (e.g. unseen categories with no target signal).
+    (the mean of ``target`` within each category level). When ``means`` is
+    provided it is used as the fixed encoding map (fit elsewhere, e.g. on the
+    training split) instead of recomputing from ``target`` — this lets callers
+    fit the encoding on one split and apply it to another without target
+    leakage. Returns None if encoding produces all-NaN (e.g. unseen categories
+    with no target signal).
     """
     if pd.api.types.is_numeric_dtype(series):
         return series
     if isinstance(series.dtype, pd.CategoricalDtype) or series.dtype == object:
-        means = target.groupby(series, observed=True).mean()
+        if means is None:
+            means = target.groupby(series, observed=True).mean()
         encoded = series.map(means)
         if encoded.isna().all():
             return None
         return encoded.astype(float)
     return None
+
+
+def fit_interaction_encoders(
+    data: pd.DataFrame,
+    target_column: str,
+    suggestions: list[SyntheticFeatureSuggestion],
+) -> dict[str, pd.Series]:
+    """Fit target-mean encodings for the categorical features used by suggestions.
+
+    Computes, for every categorical/object constituent feature referenced by
+    ``suggestions``, the per-category mean of the target on ``data``. Intended
+    to be fit on the training split and passed to :func:`build_injection_frame`
+    so the same encoding is applied to a held-out split — otherwise a
+    synthetic built from a categorical feature would encode that split's own
+    target and win the DFE competition through leakage rather than merit.
+    """
+    target = data[target_column]
+    encoders: dict[str, pd.Series] = {}
+    for suggestion in suggestions:
+        for feature in (suggestion.feature_a, suggestion.feature_b):
+            if feature in encoders or feature not in data.columns:
+                continue
+            series = data[feature]
+            if isinstance(series.dtype, pd.CategoricalDtype) or series.dtype == object:
+                encoders[feature] = target.groupby(series, observed=True).mean()
+    return encoders
 
 
 def _build_candidate(
@@ -214,6 +249,7 @@ def build_injection_frame(
     target_column: str,
     suggestions: list[SyntheticFeatureSuggestion],
     max_inject: int,
+    encoders: dict[str, pd.Series] | None = None,
 ) -> tuple[pd.DataFrame, list[str]]:
     """Build the augmented DataFrame for DFE loop feedback.
 
@@ -226,17 +262,27 @@ def build_injection_frame(
         target_column: Name of the target column.
         suggestions: Sorted list of SyntheticFeatureSuggestion (best first).
         max_inject: Maximum columns to inject.
+        encoders: Optional pre-fit target-mean encodings (see
+            :func:`fit_interaction_encoders`). When provided, categorical
+            constituents are encoded with this fixed map rather than ``data``'s
+            own target, so the same encoding fit on the training split can be
+            applied to a held-out split without leakage.
 
     Returns:
         Tuple of (augmented_df, injected_names).
     """
     target = data[target_column]
+    encoders = encoders or {}
     augmented = data.copy()
     injected: list[str] = []
 
     for suggestion in suggestions[:max_inject]:
-        col_a = _encode_for_interaction(data[suggestion.feature_a], target)
-        col_b = _encode_for_interaction(data[suggestion.feature_b], target)
+        col_a = _encode_for_interaction(
+            data[suggestion.feature_a], target, encoders.get(suggestion.feature_a)
+        )
+        col_b = _encode_for_interaction(
+            data[suggestion.feature_b], target, encoders.get(suggestion.feature_b)
+        )
         if col_a is None or col_b is None:
             continue
         candidate = _build_candidate(col_a, col_b, suggestion.operator)

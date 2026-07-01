@@ -4,12 +4,15 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from treeshaker.config import Config
+from treeshaker.pipeline import FeatureSelectionPipeline
 from treeshaker.synthetic_features import (
     SyntheticConfig,
     SyntheticFeatureSuggestion,
     _build_candidate,
     _encode_for_interaction,
     build_injection_frame,
+    fit_interaction_encoders,
     suggest_synthetic_features,
 )
 
@@ -168,3 +171,104 @@ def test_dfe_loop_feedback_config_defaults():
     cfg = SyntheticConfig()
     assert cfg.dfe_loop_feedback is False
     assert cfg.dfe_max_inject == 5
+
+
+# --- fit_interaction_encoders + leakage-free application ---
+
+
+def test_fit_interaction_encoders_only_categorical():
+    data = pd.DataFrame(
+        {"num": [1.0, 2.0, 3.0], "cat": ["a", "a", "b"], "y": [1.0, 0.0, 1.0]}
+    )
+    suggestions = [
+        SyntheticFeatureSuggestion("num", "cat", "product", "num__x__cat", 0.5)
+    ]
+    encoders = fit_interaction_encoders(data, "y", suggestions)
+    assert set(encoders) == {"cat"}  # numeric constituent not encoded
+    assert encoders["cat"].loc["a"] == pytest.approx(0.5)
+
+
+def test_encoder_applied_consistently_across_splits():
+    train = pd.DataFrame(
+        {
+            "cat": ["a", "a", "b", "b"],
+            "num": [1.0, 1.0, 1.0, 1.0],
+            "y": [0.0, 1.0, 1.0, 1.0],
+        }
+    )
+    # Test split has a totally different target; without a fixed encoder the
+    # categorical encoding would leak the test target.
+    test = pd.DataFrame({"cat": ["a", "b"], "num": [1.0, 1.0], "y": [9.0, 9.0]})
+    suggestions = [
+        SyntheticFeatureSuggestion("cat", "num", "product", "cat__x__num", 0.5)
+    ]
+    encoders = fit_interaction_encoders(train, "y", suggestions)
+    _, injected = build_injection_frame(
+        test, "y", suggestions, max_inject=5, encoders=encoders
+    )
+    aug, _ = build_injection_frame(
+        test, "y", suggestions, max_inject=5, encoders=encoders
+    )
+    # "a" -> train mean 0.5, "b" -> train mean 1.0, times num (1.0)
+    assert aug["cat__x__num"].tolist() == pytest.approx([0.5, 1.0])
+
+
+def test_encode_for_interaction_uses_provided_means():
+    s = pd.Series(["a", "b"])
+    fixed = pd.Series({"a": 10.0, "b": 20.0})
+    result = _encode_for_interaction(s, pd.Series([0.0, 0.0]), means=fixed)
+    assert result is not None
+    assert result.tolist() == pytest.approx([10.0, 20.0])
+
+
+# --- real competition: _evaluate_synthetic_replacements ---
+
+
+def _prep_pipeline_for_competition(target_fn) -> FeatureSelectionPipeline:
+    rng = np.random.default_rng(0)
+    n = 400
+    A = rng.uniform(1.0, 5.0, n)
+    B = rng.uniform(1.0, 5.0, n)
+    y = target_fn(A, B, rng)
+    df = pd.DataFrame({"A": A, "B": B, "y": y})
+    train, val, test = df.iloc[:240], df.iloc[240:320], df.iloc[320:]
+
+    cfg = Config(
+        input_file="unused.csv",
+        target_column="y",
+        task="regression",
+        synthetic_config=SyntheticConfig(dfe_loop_feedback=True, dfe_max_inject=3),
+    )
+    pipe = FeatureSelectionPipeline(cfg)
+    pipe.train_data, pipe.val_data, pipe.test_data = (
+        train.reset_index(drop=True),
+        val.reset_index(drop=True),
+        test.reset_index(drop=True),
+    )
+    pipe.feature_names = ["A", "B"]
+    pipe.results = pd.DataFrame(
+        {"feature_name": ["A", "B"], "recommendation": ["Keep", "Keep"]}
+    )
+    pipe.suggested_features = [
+        SyntheticFeatureSuggestion("A", "B", "product", "A__x__B", 1.0)
+    ]
+    return pipe
+
+
+def test_evaluate_replacement_marks_when_synthetic_dominates():
+    # target is exactly the product -> synthetic A*B should outrank A and B.
+    pipe = _prep_pipeline_for_competition(lambda A, B, rng: A * B)
+    replaced = pipe._evaluate_synthetic_replacements()
+    assert replaced == {"A", "B"}
+
+
+def test_evaluate_replacement_empty_when_nothing_injectable():
+    # Ratio with an all-zero denominator can't be built -> no injection, so no
+    # raw feature is demoted (a synthetic that never entered can't win).
+    pipe = _prep_pipeline_for_competition(lambda A, B, rng: A + B)
+    for split in (pipe.train_data, pipe.test_data):
+        split["B"] = 0.0
+    pipe.suggested_features = [
+        SyntheticFeatureSuggestion("A", "B", "ratio", "A__div__B", 1.0)
+    ]
+    assert pipe._evaluate_synthetic_replacements() == set()

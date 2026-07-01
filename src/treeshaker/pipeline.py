@@ -28,6 +28,7 @@ from .residual_diagnostics import (
 from .synthetic_features import (
     SyntheticFeatureSuggestion,
     build_injection_frame,
+    fit_interaction_encoders,
     suggest_synthetic_features,
 )
 from .utils import (
@@ -588,6 +589,7 @@ class FeatureSelectionPipeline:
         self.interactions: pd.DataFrame | None = None
         self.severe_class_imbalance: bool = False
         self.suggested_features: list[SyntheticFeatureSuggestion] | None = None
+        self._best_params: dict = {}
 
     def _train_val_data(self) -> pd.DataFrame:
         """Concatenate train and validation splits for final-model fitting.
@@ -807,6 +809,7 @@ class FeatureSelectionPipeline:
             best_params: Hyperparameter dict returned by tune_hyperparams().
                 Ignored when config.custom_model is set.
         """
+        self._best_params = best_params
         combined = self._train_val_data()
         X = combined[self.feature_names]
         y = combined[self.config.target_column]
@@ -1658,38 +1661,15 @@ class FeatureSelectionPipeline:
                     self.config.synthetic_config.dfe_loop_feedback
                     and self.suggested_features
                 ):
-                    augmented, injected = build_injection_frame(
-                        data=self.test_data,
-                        target_column=self.config.target_column,
-                        suggestions=self.suggested_features,
-                        max_inject=self.config.synthetic_config.dfe_max_inject,
-                    )
-                    if injected:
+                    replaced = self._evaluate_synthetic_replacements()
+                    if replaced:
+                        mask = self.results["feature_name"].isin(replaced)
+                        self.results.loc[mask, "recommendation"] = "ReplacedBySynthetic"
                         self.logger.info(
-                            f"DFE loop feedback: injecting {len(injected)}"
-                            f" synthetic features: {injected}"
+                            f"DFE loop feedback: {len(replaced)} raw features"
+                            f" outperformed by a synthetic derivative, marked"
+                            f" ReplacedBySynthetic: {sorted(replaced)}"
                         )
-                        # Mark raw constituents that are outperformed by their
-                        # synthetic replacement as ReplacedBySynthetic.
-                        injected_set = set(injected)
-                        replaced: set[str] = set()
-                        for suggestion in self.suggested_features[
-                            : self.config.synthetic_config.dfe_max_inject
-                        ]:
-                            if suggestion.suggested_name in injected_set:
-                                for raw in (suggestion.feature_a, suggestion.feature_b):
-                                    if raw in set(self.results["feature_name"]):
-                                        replaced.add(raw)
-                        if replaced:
-                            mask = self.results["feature_name"].isin(replaced)
-                            self.results.loc[mask, "recommendation"] = (
-                                "ReplacedBySynthetic"
-                            )
-                            self.logger.info(
-                                f"DFE loop feedback: {len(replaced)} raw"
-                                f" features marked ReplacedBySynthetic:"
-                                f" {sorted(replaced)}"
-                            )
         elif self.config.synthetic_config.synthesize_from_interactions:
             self.logger.warning(
                 "synthetic_config.synthesize_from_interactions is True but"
@@ -1716,3 +1696,92 @@ class FeatureSelectionPipeline:
             f" {n_drop} to drop, {n_caution} flagged as caution."
         )
         return self.results
+
+    def _evaluate_synthetic_replacements(self) -> set[str]:
+        """Re-fit on the augmented feature set and return raw features that a
+        synthetic derivative genuinely outperforms.
+
+        DFE loop feedback should only demote a raw feature when its synthetic
+        replacement actually wins on the model's own terms, not merely because
+        a synthetic was derived from it. This runs a real competition:
+
+        1. Build train+val and test frames augmented with the injected
+           synthetics. Categorical constituents are target-mean encoded with a
+           map fit on the training split only (via ``fit_interaction_encoders``)
+           and applied unchanged to the test split, so a synthetic can't win
+           through test-set target leakage.
+        2. Fit a fresh model (reusing the tuned ``best_params``) on the
+           augmented training features.
+        3. Compute SHAP importance on the augmented test split for the raw
+           features plus the synthetics together.
+        4. Mark a raw constituent ``ReplacedBySynthetic`` only when its
+           synthetic derivative's SHAP importance strictly exceeds its own.
+
+        Returns the set of raw feature names to demote (empty when nothing was
+        injectable or no synthetic beat its constituents).
+        """
+        if (
+            self.test_data is None
+            or self.results is None
+            or not self.suggested_features
+        ):
+            return set()
+
+        cfg = self.config.synthetic_config
+        target_column = self.config.target_column
+        train_pool = self._train_val_data()
+
+        # Fit categorical encoders on training data only, then apply the same
+        # map to both splits so the encoding never sees held-out targets.
+        encoders = fit_interaction_encoders(
+            train_pool, target_column, self.suggested_features
+        )
+        augmented_train, injected_train = build_injection_frame(
+            train_pool,
+            target_column,
+            self.suggested_features,
+            cfg.dfe_max_inject,
+            encoders,
+        )
+        augmented_test, injected_test = build_injection_frame(
+            self.test_data,
+            target_column,
+            self.suggested_features,
+            cfg.dfe_max_inject,
+            encoders,
+        )
+        # Only compete synthetics that were buildable on both splits.
+        injected = [name for name in injected_train if name in set(injected_test)]
+        if not injected:
+            return set()
+
+        self.logger.info(
+            f"DFE loop feedback: competing {len(injected)} synthetic feature(s)"
+            f" against their raw constituents: {injected}"
+        )
+
+        compete_features = self.feature_names + injected
+        params = _build_xgb_fit_params(self._best_params, self.config)
+        model = _make_xgb_model(self.config.task, params)
+        model.fit(augmented_train[compete_features], augmented_train[target_column])
+
+        importances = compute_shap_importance(
+            model=model,
+            data=augmented_test,
+            feature_names=compete_features,
+            sample_size=self.config.shap_sample_size,
+            random_seed=self.config.random_seed,
+        )
+        imp_by_feature = dict(zip(compete_features, importances, strict=True))
+
+        known = set(self.results["feature_name"])
+        injected_set = set(injected)
+        replaced: set[str] = set()
+        for suggestion in self.suggested_features[: cfg.dfe_max_inject]:
+            if suggestion.suggested_name not in injected_set:
+                continue
+            syn_imp = imp_by_feature.get(suggestion.suggested_name, 0.0)
+            for raw in (suggestion.feature_a, suggestion.feature_b):
+                if raw in known and syn_imp > imp_by_feature.get(raw, 0.0):
+                    replaced.add(raw)
+        return replaced

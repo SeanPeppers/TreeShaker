@@ -156,4 +156,4 @@ Cargo.lock
 
 # Notebook-generated data artifacts (regenerated when notebooks are re-run)
 examples/*.csv
-treeshaker_results.csv
+treeshaker_results*.csv
