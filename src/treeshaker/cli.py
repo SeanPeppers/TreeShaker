@@ -469,7 +469,8 @@ def parse_arguments() -> argparse.Namespace:
         "--collinearity-threshold",
         type=float,
         default=0.0,
-        help="Spearman |r| threshold for grouping correlated features. 0=disabled. (default: 0.0)",
+        help="Spearman |r| threshold for grouping correlated features. 0=disabled."
+        " (default: 0.0)",
     )
     parser.add_argument(
         "--collinearity-method",

@@ -1,17 +1,17 @@
 """Tests for collinearity-aware grouped feature selection."""
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 import pytest
 from conftest import make_config
 
-from treeshaker.config import Config
-from treeshaker.exceptions import ConfigError
-from treeshaker.pipeline import FeatureSelectionPipeline
 from treeshaker.collinearity import (
     cluster_correlated_features,
     select_cluster_representative,
 )
+from treeshaker.config import Config
+from treeshaker.exceptions import ConfigError
+from treeshaker.pipeline import FeatureSelectionPipeline
 
 
 def test_threshold_zero_no_column(binary_csv, tmp_path):
@@ -35,14 +35,14 @@ def test_two_perfectly_correlated_features_one_cluster():
     x2 = x1.copy()
     x3 = rng.normal(size=100)
     df = pd.DataFrame({"X1": x1, "X2": x2, "X3": x3})
-    
+
     clusters = cluster_correlated_features(
         df,
         ["X1", "X2", "X3"],
         threshold=0.99,
         method="spearman",
     )
-    
+
     cluster_sets = [set(c) for c in clusters]
     assert {"X1", "X2"} in cluster_sets
     assert {"X3"} in cluster_sets
@@ -64,11 +64,11 @@ def test_collinear_duplicate_recommendation(tmp_path):
     x2 = x1.copy()
     x3 = rng.normal(size=200)
     target = x1 * 2 + rng.normal(scale=0.1, size=200)
-    
+
     df = pd.DataFrame({"X1": x1, "X2": x2, "X3": x3, "target": target})
     csv_path = tmp_path / "collinear_dup.csv"
     df.to_csv(csv_path, index=False)
-    
+
     cfg = make_config(
         str(csv_path),
         "regression",
@@ -79,10 +79,10 @@ def test_collinear_duplicate_recommendation(tmp_path):
     )
     pipeline = FeatureSelectionPipeline(cfg)
     results = pipeline.run()
-    
+
     x1_row = results[results["feature_name"] == "X1"].iloc[0]
     x2_row = results[results["feature_name"] == "X2"].iloc[0]
-    
+
     if x1_row["shap_importance"] > x2_row["shap_importance"]:
         assert x2_row["recommendation"] == "CollinearDuplicate"
         assert x1_row["recommendation"] != "CollinearDuplicate"
@@ -98,11 +98,11 @@ def test_collinearity_cluster_column_present(tmp_path):
     x2 = x1.copy()
     x3 = rng.normal(size=200)
     target = x1 * 2 + rng.normal(scale=0.1, size=200)
-    
+
     df = pd.DataFrame({"X1": x1, "X2": x2, "X3": x3, "target": target})
     csv_path = tmp_path / "collinear_pres.csv"
     df.to_csv(csv_path, index=False)
-    
+
     cfg = make_config(
         str(csv_path),
         "regression",
@@ -113,9 +113,11 @@ def test_collinearity_cluster_column_present(tmp_path):
     )
     pipeline = FeatureSelectionPipeline(cfg)
     results = pipeline.run()
-    
+
     assert "collinearity_cluster" in results.columns
-    cluster_map = dict(zip(results["feature_name"], results["collinearity_cluster"]))
+    cluster_map = dict(
+        zip(results["feature_name"], results["collinearity_cluster"], strict=True)
+    )
     assert cluster_map["X1"] == cluster_map["X2"]
     assert cluster_map["X1"] != "singleton"
     assert cluster_map["X3"] == "singleton"

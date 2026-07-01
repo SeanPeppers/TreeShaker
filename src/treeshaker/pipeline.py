@@ -1497,7 +1497,9 @@ class FeatureSelectionPipeline:
                     cluster_labels[feat] = label
                     if feat != rep and len(cluster) > 1:
                         duplicate_features.add(feat)
-            self.results['collinearity_cluster'] = self.results['feature_name'].map(cluster_labels)
+            self.results["collinearity_cluster"] = self.results["feature_name"].map(
+                cluster_labels
+            )
             mask = self.results['feature_name'].isin(duplicate_features)
             self.results.loc[mask, 'recommendation'] = 'CollinearDuplicate'
 
