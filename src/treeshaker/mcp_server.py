@@ -52,6 +52,11 @@ def _build_config(
     check_residuals: bool = False,
     compute_shap_interactions: bool = False,
     synthesize_features: bool = False,
+    synthesis_top_n: int = 5,
+    synthesis_mi_threshold: float = 0.01,
+    synthesis_operators: list[str] | None = None,
+    dfe_loop_feedback: bool = False,
+    dfe_max_inject: int = 5,
     n_bootstrap: int = 0,
     device: Literal["auto", "cuda", "cpu"] = "auto",
     skip_tuning: bool = False,
@@ -102,7 +107,18 @@ def _build_config(
         output_file = f"{output_path}.csv"
     output_format = "html" if output_file.lower().endswith(".html") else "csv"
 
-    synthetic_config = SyntheticConfig(synthesize_from_interactions=synthesize_features)
+    synthetic_config = SyntheticConfig(
+        synthesize_from_interactions=synthesize_features,
+        interaction_top_n=synthesis_top_n,
+        mi_threshold=synthesis_mi_threshold,
+        operators=(
+            synthesis_operators
+            if synthesis_operators is not None
+            else ["product", "ratio"]
+        ),
+        dfe_loop_feedback=dfe_loop_feedback,
+        dfe_max_inject=dfe_max_inject,
+    )
     if synthesize_features and not compute_shap_interactions:
         # Mirrors the CLI/pipeline contract documented in pipeline.run():
         # synthesize_from_interactions requires compute_shap_interactions.
@@ -176,6 +192,11 @@ def run_pipeline(
     check_residuals: bool = False,
     compute_shap_interactions: bool = False,
     synthesize_features: bool = False,
+    synthesis_top_n: int = 5,
+    synthesis_mi_threshold: float = 0.01,
+    synthesis_operators: list[str] | None = None,
+    dfe_loop_feedback: bool = False,
+    dfe_max_inject: int = 5,
     n_bootstrap: int = 0,
     device: Literal["auto", "cuda", "cpu"] = "auto",
     skip_tuning: bool = False,
@@ -227,9 +248,23 @@ def run_pipeline(
             (opt-in, expensive).
         synthesize_features: Suggest synthetic derived features (pairwise
             products and ratios, plus target-mean-encoded categorical
-            interactions) from SHAP interactions (opt-in, advisory only;
-            implies compute_shap_interactions). The auto-injecting
-            dfe_loop_feedback path is Python-API-only and not exposed here.
+            interactions) from SHAP interactions (opt-in, advisory by default;
+            implies compute_shap_interactions).
+        synthesis_top_n: Number of strongest SHAP-interacting pairs to consider
+            as synthetic candidates. Only used when synthesize_features is True.
+        synthesis_mi_threshold: Minimum mutual information a synthetic candidate
+            must exceed to be reported/injected. Only used when
+            synthesize_features is True.
+        synthesis_operators: Operators to build candidates from — any of
+            "product" and "ratio". Defaults to both. Only used when
+            synthesize_features is True.
+        dfe_loop_feedback: Inject the top synthetic candidates back into the
+            pipeline so they compete against the raw features in a re-fit; a raw
+            feature whose synthetic derivative achieves strictly higher SHAP
+            importance is marked "ReplacedBySynthetic". Requires
+            synthesize_features. Off by default (advisory-only).
+        dfe_max_inject: Maximum synthetic features to inject when
+            dfe_loop_feedback is True (top-scoring by MI). Default 5.
         n_bootstrap: Number of bootstrap resamples for importance stability
             (0 disables).
         device: XGBoost training device: "auto", "cuda", or "cpu".
@@ -301,6 +336,11 @@ def run_pipeline(
             check_residuals=check_residuals,
             compute_shap_interactions=compute_shap_interactions,
             synthesize_features=synthesize_features,
+            synthesis_top_n=synthesis_top_n,
+            synthesis_mi_threshold=synthesis_mi_threshold,
+            synthesis_operators=synthesis_operators,
+            dfe_loop_feedback=dfe_loop_feedback,
+            dfe_max_inject=dfe_max_inject,
             n_bootstrap=n_bootstrap,
             device=device,
             skip_tuning=skip_tuning,

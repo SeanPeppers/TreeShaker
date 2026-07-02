@@ -123,6 +123,48 @@ def test_main_skip_leakage_check_propagates_to_config(binary_csv, tmp_path):
     assert mock_config.call_args.kwargs["skip_leakage_check"] is True
 
 
+def test_parse_arguments_dfe_defaults():
+    with patch("sys.argv", cli_argv(task="regression")):
+        args = parse_arguments()
+    assert args.synthesis_operators == ["product", "ratio"]
+    assert args.dfe_loop_feedback is False
+    assert args.dfe_max_inject == 5
+
+
+def test_main_dfe_flags_propagate_to_synthetic_config(binary_csv, tmp_path):
+    """--dfe-loop-feedback / --synthesis-operators must reach SyntheticConfig."""
+    output = str(tmp_path / "results.csv")
+    with (
+        patch(
+            "sys.argv",
+            cli_argv(
+                "--output",
+                output,
+                "--optuna-trials",
+                "1",
+                "--device",
+                "cpu",
+                "--synthesize-features",
+                "--shap-interactions",
+                "--dfe-loop-feedback",
+                "--dfe-max-inject",
+                "3",
+                "--synthesis-operators",
+                "product",
+                input=binary_csv,
+                target="target",
+            ),
+        ),
+        patch("treeshaker.cli.Config", wraps=Config) as mock_config,
+    ):
+        exit_code = main()
+    assert exit_code == 0
+    synthetic_config = mock_config.call_args.kwargs["synthetic_config"]
+    assert synthetic_config.dfe_loop_feedback is True
+    assert synthetic_config.dfe_max_inject == 3
+    assert synthetic_config.operators == ["product"]
+
+
 def test_main_invalid_json_xgboost_params(tmp_path):
     with patch("sys.argv", cli_argv("--xgboost-params", "not-json")):
         result = main()
