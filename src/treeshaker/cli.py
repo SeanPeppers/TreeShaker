@@ -207,6 +207,32 @@ def parse_arguments() -> argparse.Namespace:
         " --synthesize-features is set. (default: 0.01)",
     )
     parser.add_argument(
+        "--synthesis-operators",
+        nargs="+",
+        choices=["product", "ratio"],
+        default=["product", "ratio"],
+        metavar="OP",
+        help="Operators to build synthetic candidates from when"
+        " --synthesize-features is set: 'product' (A*B) and/or 'ratio' (A/B,"
+        " zero-denominator safe). (default: product ratio)",
+    )
+    parser.add_argument(
+        "--dfe-loop-feedback",
+        action="store_true",
+        help="Inject the top synthetic candidates back into the pipeline so"
+        " they compete against the raw features in a re-fit: a raw feature"
+        " whose synthetic derivative achieves strictly higher SHAP importance"
+        " is marked 'ReplacedBySynthetic'. Requires --synthesize-features."
+        " Off by default (advisory-only).",
+    )
+    parser.add_argument(
+        "--dfe-max-inject",
+        type=int,
+        default=5,
+        help="Maximum number of synthetic features to inject when"
+        " --dfe-loop-feedback is set (top-scoring by MI). (default: 5)",
+    )
+    parser.add_argument(
         "--imbalance-threshold",
         type=float,
         default=0.1,
@@ -561,6 +587,9 @@ def main() -> int:
                 synthesize_from_interactions=args.synthesize_features,
                 interaction_top_n=args.synthesis_top_n,
                 mi_threshold=args.synthesis_mi_threshold,
+                operators=args.synthesis_operators,
+                dfe_loop_feedback=args.dfe_loop_feedback,
+                dfe_max_inject=args.dfe_max_inject,
             ),
             compute_train_importance=args.compute_train_importance,
             train_test_importance_delta_threshold=args.train_test_delta_threshold,

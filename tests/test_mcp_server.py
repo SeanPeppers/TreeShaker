@@ -61,6 +61,28 @@ def test_mcp_server_skip_leakage_check():
     assert cfg.skip_leakage_check is True
 
 
+def test_build_config_wires_dfe_loop_feedback():
+    """DFE loop-feedback / operator knobs must reach synthetic_config."""
+    cfg = _build_config(
+        input_path="data.csv",
+        target_column="y",
+        task="binary",
+        output_path="out.csv",
+        synthesize_features=True,
+        synthesis_top_n=3,
+        synthesis_mi_threshold=0.05,
+        synthesis_operators=["product"],
+        dfe_loop_feedback=True,
+        dfe_max_inject=2,
+    )
+    assert cfg.synthetic_config.synthesize_from_interactions is True
+    assert cfg.synthetic_config.interaction_top_n == 3
+    assert cfg.synthetic_config.mi_threshold == 0.05
+    assert cfg.synthetic_config.operators == ["product"]
+    assert cfg.synthetic_config.dfe_loop_feedback is True
+    assert cfg.synthetic_config.dfe_max_inject == 2
+
+
 def test_run_pipeline_regression(regression_csv, tmp_path):
     output_path = str(tmp_path / "reg_results")
     result = run_pipeline(
