@@ -1646,6 +1646,10 @@ class FeatureSelectionPipeline:
                     task=self.config.task,
                     random_seed=self.config.random_seed,
                     config=self.config.synthetic_config,
+                    # Fit categorical target-mean encoding on train+val, not on
+                    # the held-out test rows the candidate MI is scored over,
+                    # so a categorical synthetic's MI isn't inflated by leakage.
+                    encoder_source=self._train_val_data(),
                 )
                 stem = derive_output_stem(self.config.output_file)
                 suggestions_file = f"{stem}_suggested_features.csv"

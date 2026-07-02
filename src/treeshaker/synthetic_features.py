@@ -106,11 +106,17 @@ def _encode_for_interaction(
     if pd.api.types.is_numeric_dtype(series):
         return series
     if isinstance(series.dtype, pd.CategoricalDtype) or series.dtype == object:
+        externally_fit = means is not None
         if means is None:
             means = target.groupby(series, observed=True).mean()
         encoded = series.map(means)
         if encoded.isna().all():
             return None
+        if externally_fit and encoded.isna().any():
+            # Categories present here but unseen in the fit split (e.g. a test
+            # level absent from train) map to NaN. Fall back to the mean of the
+            # fit-split category means rather than leaking this split's target.
+            encoded = encoded.fillna(means.mean())
         return encoded.astype(float)
     return None
 
@@ -129,16 +135,36 @@ def fit_interaction_encoders(
     synthetic built from a categorical feature would encode that split's own
     target and win the DFE competition through leakage rather than merit.
     """
-    target = data[target_column]
-    encoders: dict[str, pd.Series] = {}
-    for suggestion in suggestions:
-        for feature in (suggestion.feature_a, suggestion.feature_b):
-            if feature in encoders or feature not in data.columns:
-                continue
-            series = data[feature]
-            if isinstance(series.dtype, pd.CategoricalDtype) or series.dtype == object:
-                encoders[feature] = target.groupby(series, observed=True).mean()
-    return encoders
+    referenced = {
+        feature
+        for suggestion in suggestions
+        for feature in (suggestion.feature_a, suggestion.feature_b)
+    }
+    all_means = _fit_feature_means(data, target_column)
+    return {name: means for name, means in all_means.items() if name in referenced}
+
+
+def _fit_feature_means(
+    source: pd.DataFrame | None, target_column: str
+) -> dict[str, pd.Series]:
+    """Fit per-category target means for every categorical/object column.
+
+    Returns an empty dict when ``source`` is None. Used both by
+    :func:`fit_interaction_encoders` (filtered to the features a set of
+    suggestions references) and by :func:`suggest_synthetic_features` (to
+    encode categoricals from a separate fit split without target leakage).
+    """
+    if source is None:
+        return {}
+    target = source[target_column]
+    means: dict[str, pd.Series] = {}
+    for feature in source.columns:
+        if feature == target_column:
+            continue
+        series = source[feature]
+        if isinstance(series.dtype, pd.CategoricalDtype) or series.dtype == object:
+            means[feature] = target.groupby(series, observed=True).mean()
+    return means
 
 
 def _build_candidate(
@@ -171,6 +197,7 @@ def suggest_synthetic_features(
     task: str,
     random_seed: int,
     config: SyntheticConfig | None = None,
+    encoder_source: pd.DataFrame | None = None,
 ) -> list[SyntheticFeatureSuggestion]:
     """Suggest candidate derived features from strong SHAP interactions.
 
@@ -187,6 +214,13 @@ def suggest_synthetic_features(
         task: One of "binary", "multiclass", or "regression".
         random_seed: Seed for reproducible mutual information results.
         config: A SyntheticConfig instance.
+        encoder_source: Optional separate DataFrame (e.g. the training split)
+            used to fit the target-mean encoding for categorical constituents.
+            When provided, categoricals are encoded with means computed on
+            ``encoder_source`` and merely applied to ``data``, so the MI score
+            of a categorical synthetic isn't inflated by encoding ``data``'s
+            own (held-out) target. When None, encoding is fit in-sample on
+            ``data`` (backward-compatible default).
 
     Returns:
         List of SyntheticFeatureSuggestion sorted by mi_score descending.
@@ -195,6 +229,8 @@ def suggest_synthetic_features(
     top_pairs = interactions.head(config.interaction_top_n)
     target = data[target_column]
 
+    encoder_means = _fit_feature_means(encoder_source, target_column)
+
     suggestions: list[SyntheticFeatureSuggestion] = []
     seen_names: set[str] = set()
 
@@ -202,8 +238,12 @@ def suggest_synthetic_features(
         feature_a: str = row["feature_a"]
         feature_b: str = row["feature_b"]
 
-        col_a = _encode_for_interaction(data[feature_a], target)
-        col_b = _encode_for_interaction(data[feature_b], target)
+        col_a = _encode_for_interaction(
+            data[feature_a], target, encoder_means.get(feature_a)
+        )
+        col_b = _encode_for_interaction(
+            data[feature_b], target, encoder_means.get(feature_b)
+        )
         if col_a is None or col_b is None:
             continue
 
