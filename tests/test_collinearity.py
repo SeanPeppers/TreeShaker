@@ -1,5 +1,7 @@
 """Tests for collinearity-aware grouped feature selection."""
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -12,6 +14,30 @@ from treeshaker.collinearity import (
 from treeshaker.config import Config
 from treeshaker.exceptions import ConfigError
 from treeshaker.pipeline import FeatureSelectionPipeline
+
+
+def test_constant_column_no_runtime_warning():
+    """A zero-variance column must not leak numpy's divide-by-zero warning.
+
+    Correlating a constant column returns NaN (handled as 'not collinear'),
+    but numpy emits a RuntimeWarning while dividing by its zero std. Regression
+    guard: constant columns are common in messy real data.
+    """
+    X = pd.DataFrame(
+        {
+            "const": np.ones(50),
+            "a": np.arange(50, dtype=float),
+            "b": np.arange(50, dtype=float) * 2.0,
+        }
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        clusters = cluster_correlated_features(
+            X, ["const", "a", "b"], threshold=0.9, method="pearson"
+        )
+    # const is zero-variance -> its own singleton; a and b are collinear.
+    assert ["const"] in clusters
+    assert any(set(c) == {"a", "b"} for c in clusters)
 
 
 def test_threshold_zero_no_column(binary_csv, tmp_path):
