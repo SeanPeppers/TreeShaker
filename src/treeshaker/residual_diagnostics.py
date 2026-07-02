@@ -20,6 +20,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from .utils import ignore_constant_corr_warnings
+
 
 @dataclass
 class ResidualConfig:
@@ -124,7 +126,8 @@ def compute_residual_correlation(
         col = data[name]
         if not pd.api.types.is_numeric_dtype(col):
             continue
-        corr = col.corr(residual_series)
+        with ignore_constant_corr_warnings():
+            corr = col.corr(residual_series)
         if pd.isna(corr):
             continue
         correlations[i] = corr

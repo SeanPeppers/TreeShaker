@@ -10,6 +10,8 @@ import pandas as pd
 from scipy.stats.contingency import association
 from sklearn.linear_model import LinearRegression
 
+from .utils import ignore_constant_corr_warnings
+
 logger = logging.getLogger(__name__)
 
 # Attempt to import the optional Rust LSH extension for approximate screening.
@@ -392,7 +394,8 @@ class LeakageDetector:
             col = df[name]
             if not pd.api.types.is_numeric_dtype(col):
                 continue
-            corr = col.corr(target)
+            with ignore_constant_corr_warnings():
+                corr = col.corr(target)
             if pd.isna(corr):
                 continue
             if abs(corr) >= self.config.target_corr_threshold:
@@ -563,7 +566,8 @@ class LeakageDetector:
         warnings: dict[str, list[str]],
     ) -> None:
         """Exact pairwise correlation screening (O(p^2))."""
-        corr_matrix = df[numeric_features].corr().abs()
+        with ignore_constant_corr_warnings():
+            corr_matrix = df[numeric_features].corr().abs()
 
         for i, name in enumerate(numeric_features):
             for j, other in enumerate(numeric_features):

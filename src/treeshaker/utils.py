@@ -3,8 +3,10 @@
 import logging
 import os
 import re
+from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
+from typing import Iterator
 
 import numpy as np
 import pandas as pd
@@ -16,6 +18,24 @@ from .exceptions import ValidationError
 #: Named metric overrides supported by `--permutation-metric` /
 #: Config.permutation_metric.
 VALID_PERMUTATION_METRICS = {"roc_auc", "accuracy", "neg_mse", "wape"}
+
+
+@contextmanager
+def ignore_constant_corr_warnings() -> Iterator[None]:
+    """Silence numpy's divide-by-zero RuntimeWarning from correlating a
+    zero-variance (constant) column.
+
+    A constant column has zero standard deviation, so Pearson/Spearman
+    correlation divides by zero and numpy emits an ``invalid value``/``divide``
+    RuntimeWarning while returning NaN. Every ``.corr()`` caller in TreeShaker
+    already treats that NaN as "no correlation" (``pd.isna`` guards, or
+    ``NaN >= threshold`` evaluating False), so the warning is pure console
+    noise — common on messy real datasets that carry constant columns. Wrap
+    the correlation call in this context manager to suppress it without
+    changing any result.
+    """
+    with np.errstate(divide="ignore", invalid="ignore"):
+        yield
 
 
 @lru_cache(maxsize=1)

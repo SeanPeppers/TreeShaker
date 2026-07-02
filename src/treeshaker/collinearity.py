@@ -6,6 +6,8 @@ from typing import Literal
 
 import pandas as pd
 
+from .utils import ignore_constant_corr_warnings
+
 
 def cluster_correlated_features(
     X: pd.DataFrame,
@@ -19,7 +21,8 @@ def cluster_correlated_features(
     numeric_features = list(subset.columns)
     if len(numeric_features) < 2:
         return [[f] for f in feature_names]
-    corr = subset.corr(method=method).abs()
+    with ignore_constant_corr_warnings():
+        corr = subset.corr(method=method).abs()
     n = len(numeric_features)
     parent = list(range(n))
 
