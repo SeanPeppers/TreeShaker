@@ -80,6 +80,23 @@ def test_build_ratio_skipped_when_zero_denominator():
     assert result is None
 
 
+def test_build_ratio_skipped_for_near_singular_denominator():
+    # 1e-12 is ~zero relative to the median |B| of 1.5 -> extreme blow-up,
+    # rejected even though it is nonzero and the raw division stays finite.
+    a = pd.Series([1.0, 2.0, 3.0])
+    b = pd.Series([1e-12, 1.0, 2.0])
+    assert _build_candidate(a, b, "ratio") is None
+
+
+def test_build_ratio_kept_when_denominator_well_scaled():
+    # Small but well-scaled denominators (all same order of magnitude) are fine.
+    a = pd.Series([1.0, 2.0, 3.0])
+    b = pd.Series([0.5, 1.0, 1.5])
+    result = _build_candidate(a, b, "ratio")
+    assert result is not None
+    np.testing.assert_array_almost_equal(result, [2.0, 2.0, 2.0])
+
+
 # --- suggest_synthetic_features ---
 
 

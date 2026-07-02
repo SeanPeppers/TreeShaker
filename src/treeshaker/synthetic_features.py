@@ -167,6 +167,13 @@ def _fit_feature_means(
     return means
 
 
+#: A ratio denominator is treated as near-singular when its smallest magnitude
+#: is below this fraction of the denominator's robust scale (median absolute
+#: value). Such a value doesn't produce inf, but does blow the ratio up to an
+#: extreme finite magnitude that would spuriously dominate MI/SHAP.
+_RATIO_NEAR_SINGULAR_FRACTION = 1e-6
+
+
 def _build_candidate(
     col_a: pd.Series,
     col_b: pd.Series,
@@ -174,14 +181,25 @@ def _build_candidate(
 ) -> pd.Series | None:
     """Build a candidate derived feature from two numeric series.
 
-    Returns None if the operation would produce all-inf/nan (e.g. ratio with
-    zero denominator throughout).
+    Returns None if the operation would produce a numerically unstable feature:
+    a ratio whose denominator contains an exact zero (inf), a near-singular
+    denominator (a value negligibly small relative to the denominator's own
+    scale, which yields an extreme finite blow-up), or any non-finite result.
     """
     if operator == "product":
         return col_a * col_b
     if operator == "ratio":
+        denom_abs = col_b.abs()
         # Skip if denominator contains any zeros — inf values corrupt MI calc.
-        if (col_b == 0).any():
+        if (denom_abs == 0).any():
+            return None
+        # Skip near-singular denominators: a value that is tiny relative to the
+        # denominator's robust scale (median |B|) produces an extreme, unstable
+        # ratio that would spuriously dominate the mutual-information score.
+        denom_scale = float(denom_abs.median())
+        if denom_scale > 0 and bool(
+            (denom_abs < _RATIO_NEAR_SINGULAR_FRACTION * denom_scale).any()
+        ):
             return None
         result = col_a / col_b
         if not np.isfinite(result.to_numpy()).all():
