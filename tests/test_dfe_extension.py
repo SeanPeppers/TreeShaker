@@ -327,8 +327,10 @@ def _prep_pipeline_for_competition(target_fn) -> FeatureSelectionPipeline:
 def test_evaluate_replacement_marks_when_synthetic_dominates():
     # target is exactly the product -> synthetic A*B should outrank A and B.
     pipe = _prep_pipeline_for_competition(lambda A, B, rng: A * B)
-    replaced = pipe._evaluate_synthetic_replacements()
+    replaced, winners = pipe._evaluate_synthetic_replacements()
     assert replaced == {"A", "B"}
+    assert "A__x__B" in winners
+    assert winners["A__x__B"] > 0.0
 
 
 def test_evaluate_replacement_empty_when_nothing_injectable():
@@ -340,4 +342,30 @@ def test_evaluate_replacement_empty_when_nothing_injectable():
     pipe.suggested_features = [
         SyntheticFeatureSuggestion("A", "B", "ratio", "A__div__B", 1.0)
     ]
-    assert pipe._evaluate_synthetic_replacements() == set()
+    assert pipe._evaluate_synthetic_replacements() == (set(), {})
+
+
+def test_append_synthetic_winner_rows_adds_keep_rows():
+    pipe = _prep_pipeline_for_competition(lambda A, B, rng: A * B)
+    results = pd.DataFrame(
+        {
+            "feature_name": ["A", "B"],
+            "shap_importance": [0.1, 0.2],
+            "recommendation": ["ReplacedBySynthetic", "ReplacedBySynthetic"],
+            "reason": ["", ""],
+        }
+    )
+    out = pipe._append_synthetic_winner_rows(results, {"A__x__B": 0.9})
+    row = out[out["feature_name"] == "A__x__B"]
+    assert len(row) == 1
+    assert row.iloc[0]["recommendation"] == "Keep"
+    assert row.iloc[0]["shap_importance"] == 0.9
+    # existing rows untouched
+    assert set(out["feature_name"]) == {"A", "B", "A__x__B"}
+
+
+def test_append_synthetic_winner_rows_noop_when_empty():
+    pipe = _prep_pipeline_for_competition(lambda A, B, rng: A * B)
+    results = pd.DataFrame({"feature_name": ["A"], "recommendation": ["Keep"]})
+    out = pipe._append_synthetic_winner_rows(results, {})
+    pd.testing.assert_frame_equal(out, results)

@@ -1665,14 +1665,19 @@ class FeatureSelectionPipeline:
                     self.config.synthetic_config.dfe_loop_feedback
                     and self.suggested_features
                 ):
-                    replaced = self._evaluate_synthetic_replacements()
+                    replaced, winners = self._evaluate_synthetic_replacements()
                     if replaced:
                         mask = self.results["feature_name"].isin(replaced)
                         self.results.loc[mask, "recommendation"] = "ReplacedBySynthetic"
+                        self.results = self._append_synthetic_winner_rows(
+                            self.results, winners
+                        )
                         self.logger.info(
                             f"DFE loop feedback: {len(replaced)} raw features"
                             f" outperformed by a synthetic derivative, marked"
-                            f" ReplacedBySynthetic: {sorted(replaced)}"
+                            f" ReplacedBySynthetic: {sorted(replaced)};"
+                            f" added {len(winners)} synthetic feature(s) to"
+                            f" results: {sorted(winners)}"
                         )
         elif self.config.synthetic_config.synthesize_from_interactions:
             self.logger.warning(
@@ -1701,7 +1706,9 @@ class FeatureSelectionPipeline:
         )
         return self.results
 
-    def _evaluate_synthetic_replacements(self) -> set[str]:
+    def _evaluate_synthetic_replacements(
+        self,
+    ) -> tuple[set[str], dict[str, float]]:
         """Re-fit on the augmented feature set and return raw features that a
         synthetic derivative genuinely outperforms.
 
@@ -1721,15 +1728,18 @@ class FeatureSelectionPipeline:
         4. Mark a raw constituent ``ReplacedBySynthetic`` only when its
            synthetic derivative's SHAP importance strictly exceeds its own.
 
-        Returns the set of raw feature names to demote (empty when nothing was
-        injectable or no synthetic beat its constituents).
+        Returns ``(replaced, winners)`` where ``replaced`` is the set of raw
+        feature names to demote and ``winners`` maps each winning synthetic
+        feature name to its SHAP importance on the augmented test split (so the
+        caller can surface the replacement in the results table). Both are empty
+        when nothing was injectable or no synthetic beat its constituents.
         """
         if (
             self.test_data is None
             or self.results is None
             or not self.suggested_features
         ):
-            return set()
+            return set(), {}
 
         cfg = self.config.synthetic_config
         target_column = self.config.target_column
@@ -1757,7 +1767,7 @@ class FeatureSelectionPipeline:
         # Only compete synthetics that were buildable on both splits.
         injected = [name for name in injected_train if name in set(injected_test)]
         if not injected:
-            return set()
+            return set(), {}
 
         self.logger.info(
             f"DFE loop feedback: competing {len(injected)} synthetic feature(s)"
@@ -1781,11 +1791,46 @@ class FeatureSelectionPipeline:
         known = set(self.results["feature_name"])
         injected_set = set(injected)
         replaced: set[str] = set()
+        winners: dict[str, float] = {}
         for suggestion in self.suggested_features[: cfg.dfe_max_inject]:
-            if suggestion.suggested_name not in injected_set:
+            name = suggestion.suggested_name
+            if name not in injected_set:
                 continue
-            syn_imp = imp_by_feature.get(suggestion.suggested_name, 0.0)
+            syn_imp = imp_by_feature.get(name, 0.0)
             for raw in (suggestion.feature_a, suggestion.feature_b):
                 if raw in known and syn_imp > imp_by_feature.get(raw, 0.0):
                     replaced.add(raw)
-        return replaced
+                    winners[name] = syn_imp
+        return replaced, winners
+
+    def _append_synthetic_winner_rows(
+        self, results: pd.DataFrame, winners: dict[str, float]
+    ) -> pd.DataFrame:
+        """Append winning DFE synthetic features to the results table as Keep rows.
+
+        When loop feedback demotes raw features to ``ReplacedBySynthetic``, the
+        synthetics that beat them would otherwise only appear in the
+        ``_suggested_features.csv`` sidecar, leaving the main results table with
+        no visible replacement. This adds one ``Keep`` row per winning synthetic
+        (carrying its measured SHAP importance) so the recommended replacement
+        is surfaced alongside the features it displaced. Columns not applicable
+        to a synthesized feature (e.g. permutation importance) are left as NaN.
+        """
+        if not winners:
+            return results
+
+        new_rows = [
+            {
+                "feature_name": name,
+                "shap_importance": importance,
+                "recommendation": "Keep",
+                "reason": (
+                    "Synthetic feature engineered by DFE loop feedback;"
+                    " outperformed its raw constituent(s) on held-out SHAP"
+                    " importance."
+                ),
+            }
+            for name, importance in winners.items()
+        ]
+        additions = pd.DataFrame(new_rows).reindex(columns=results.columns)
+        return pd.concat([results, additions], ignore_index=True)
