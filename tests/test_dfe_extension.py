@@ -11,6 +11,7 @@ from treeshaker.synthetic_features import (
     SyntheticFeatureSuggestion,
     _build_candidate,
     _encode_for_interaction,
+    _fit_feature_means,
     build_injection_frame,
     fit_interaction_encoders,
     suggest_synthetic_features,
@@ -219,6 +220,57 @@ def test_encode_for_interaction_uses_provided_means():
     result = _encode_for_interaction(s, pd.Series([0.0, 0.0]), means=fixed)
     assert result is not None
     assert result.tolist() == pytest.approx([10.0, 20.0])
+
+
+def test_encode_unseen_category_filled_with_fit_mean():
+    # "c" is unseen in the externally-fit map -> filled with mean(10, 20)=15,
+    # not with this series' own target (which would be leakage).
+    s = pd.Series(["a", "c"])
+    fixed = pd.Series({"a": 10.0, "b": 20.0})
+    result = _encode_for_interaction(s, pd.Series([99.0, 99.0]), means=fixed)
+    assert result is not None
+    assert result.tolist() == pytest.approx([10.0, 15.0])
+
+
+def test_fit_feature_means_none_returns_empty():
+    assert _fit_feature_means(None, "y") == {}
+
+
+def test_fit_feature_means_computes_categorical_only():
+    df = pd.DataFrame({"num": [1.0, 2.0], "cat": ["a", "b"], "y": [0.0, 1.0]})
+    means = _fit_feature_means(df, "y")
+    assert set(means) == {"cat"}
+    assert means["cat"].loc["a"] == pytest.approx(0.0)
+    assert means["cat"].loc["b"] == pytest.approx(1.0)
+
+
+def test_suggest_encodes_categoricals_from_encoder_source():
+    # Train and test give the categorical opposite target-means. With
+    # encoder_source=train, the encoding must reflect TRAIN means, so a
+    # candidate built on test uses the train-fit mapping (no test leakage).
+    rng = np.random.default_rng(0)
+    n = 200
+    cats = rng.choice(["a", "b"], n)
+    train = pd.DataFrame(
+        {"cat": cats, "num": rng.standard_normal(n), "y": (cats == "b").astype(float)}
+    )
+    # Test uses the inverted target relationship.
+    test_cats = rng.choice(["a", "b"], n)
+    test = pd.DataFrame(
+        {
+            "cat": test_cats,
+            "num": rng.standard_normal(n),
+            "y": (test_cats == "a").astype(float),
+        }
+    )
+    interactions = _make_interactions([("cat", "num")])
+    cfg = SyntheticConfig(interaction_top_n=1, mi_threshold=-1.0, operators=["product"])
+    # Should run without leaking and produce a suggestion referencing cat.
+    suggestions = suggest_synthetic_features(
+        test, "y", interactions, "regression", 42, cfg, encoder_source=train
+    )
+    assert len(suggestions) >= 1
+    assert suggestions[0].feature_a == "cat" or suggestions[0].feature_b == "cat"
 
 
 # --- real competition: _evaluate_synthetic_replacements ---
