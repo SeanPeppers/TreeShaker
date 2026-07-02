@@ -21,6 +21,7 @@ Most feature-importance tools give you a single number per feature from a single
 - [Feature importance methods](importance_methods.md) — SHAP, permutation, mutual information
 - [Leakage detection](leakage_detection.md) — Catch suspicious columns
 - [Harm detection](harm_detection.md) — Identify truly useless features
+- [Derived feature engineering (DFE)](dfe.md) — Synthesise features from SHAP interactions
 - [Configuration reference](config_reference.md) — All flags and options
 - [CLI reference](cli_reference.md) — Complete command-line guide
 - [MCP server](mcp_server.md) — Use TreeShaker via Claude Code
@@ -35,6 +36,7 @@ how_it_works
 importance_methods
 leakage_detection
 harm_detection
+dfe
 config_reference
 cli_reference
 mcp_server
