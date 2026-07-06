@@ -42,7 +42,7 @@ demo = [
 ]
 mcp = [
     "mcp>=1.28.1",
-    "lxml>=4.9.0",
+    "lxml>=6.1.1",
 ]
 fast = [
     "treeshaker_lsh>=0.1.0",
