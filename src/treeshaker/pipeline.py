@@ -1063,7 +1063,10 @@ class FeatureSelectionPipeline:
                     f"Correlated with kept feature(s) {mates} (collinearity "
                     f"threshold {self.config.collinearity_threshold:.2f}); low "
                     f"importance may reflect redundancy rather than "
-                    f"uselessness, so demoted from Drop to Caution."
+                    f"uselessness, so this is no longer flagged as an "
+                    f"outright Drop. (Note: if collinearity clustering below "
+                    f"also marks this a CollinearDuplicate, that label takes "
+                    f"precedence over Caution as the final recommendation.)"
                 )
                 updated_reasons[i] = (
                     f"{updated_reasons[i]} {note}".strip()
