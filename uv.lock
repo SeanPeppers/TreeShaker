@@ -3386,7 +3386,7 @@ requires-dist = [
     { name = "gradio", marker = "extra == 'demo'", specifier = ">=6.19.0" },
     { name = "lightgbm", marker = "extra == 'lightgbm'", specifier = ">=4.6.0" },
     { name = "lxml", marker = "extra == 'mcp'", specifier = ">=6.1.1" },
-    { name = "matplotlib", specifier = ">=3.7.0" },
+    { name = "matplotlib", specifier = ">=3.11.0" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.28.1,<2" },
     { name = "mlflow", marker = "extra == 'mlflow'", specifier = ">=3.14.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.8.0" },
