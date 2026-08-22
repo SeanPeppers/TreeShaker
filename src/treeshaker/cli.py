@@ -467,8 +467,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--compute-confidence-scores",
         action="store_true",
-        help="Compute calibrated confidence scores (0-1) for each feature's"
-        " recommendation.",
+        help="Compute a confidence heuristic score (0-1, not a calibrated"
+        " probability) for each feature's recommendation.",
     )
     parser.add_argument(
         "--streaming-eval-sample-size",

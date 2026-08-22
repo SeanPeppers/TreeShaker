@@ -30,7 +30,7 @@ All parameters are optional unless noted. These are settable from the Python API
 |---|---|---|---|---|
 | `shap_importance_threshold` | `--shap-threshold` | float | `0.01` | Flag features with mean \|SHAP\| below this |
 | `permutation_importance_threshold` | `--perm-threshold` | float | `0.05` | Flag features with permutation importance below this |
-| `compute_confidence_scores` | `--compute-confidence-scores` | bool | `False` | Compute calibrated confidence scores (0.5–1.0) for each feature's recommendation |
+| `compute_confidence_scores` | `--compute-confidence-scores` | bool | `False` | Compute a confidence heuristic score (0.5–1.0, not a calibrated probability) for each feature's recommendation |
 
 ### Leakage detection
 

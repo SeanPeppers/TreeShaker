@@ -71,7 +71,7 @@ Wave 1 (VIF multicollinearity, SHAP interaction values, mutual information scori
 | 21 | Streaming/chunked data support | Datasets too large for RAM — chunked read + incremental fit path. | **In review** — Stage 1 (PR #40), Stage 2 (PR #43), Stage 3 (PR #45) open. Stage 4 validation: streaming vs in-memory produce identical recommendations on OpenML adult (48 842 rows × 14 features, chunk_size=5 000, eval_sample=10 000). Real-data validation passes; docs updated. |
 | 22 | Polars/numpy-native path | Optional non-pandas path for performance; pandas stays default. | Not started |
 | 23 | Multi-seed stability report | Run full pipeline across N random seeds, report variance/agreement on recommendations (beyond existing single-seed bootstrap). | Not started |
-| 24 | Calibrated confidence scores | Replace binary accept/reject recommendation with a calibrated probability/confidence score. | Not started |
+| 24 | Confidence heuristic score | Replace binary accept/reject recommendation with a confidence heuristic score (not a calibrated probability). | Not started |
 | 25 | Example notebook with real outputs | End-to-end notebook on a real dataset (e.g. `sklearn.datasets.fetch_openml`), committed with executed outputs. | **[x] Done** — PR #33 |
 
 Order: 19 (foundational — other backends benefit from generic model interface) → 25 (notebook, can run in parallel, no pipeline.py conflict) → 20/21/22 (scale, touch shared hot paths, do sequentially) → 23/24 (research-credibility, depend on stable model interface from 19).

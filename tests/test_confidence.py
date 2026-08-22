@@ -1,4 +1,4 @@
-"""Tests for calibrated confidence scores."""
+"""Tests for the confidence heuristic score."""
 
 import numpy as np
 from conftest import make_config as make_fast_config

@@ -435,8 +435,9 @@ class Config:
     `n_stability_runs`. Ignored when n_stability_runs=0."""
 
     compute_confidence_scores: bool = False
-    """If True, compute calibrated confidence scores for each feature's
-    importance and recommendation. Off by default."""
+    """If True, compute a confidence heuristic score for each feature's
+    importance and recommendation (a threshold-margin heuristic, not a
+    statistically calibrated probability). Off by default."""
     streaming_eval_sample_size: int = 50_000
     """Maximum number of rows used for the explainability/diagnostic steps
     (SHAP, permutation importance, mutual information, leakage,

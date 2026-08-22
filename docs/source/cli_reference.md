@@ -39,7 +39,7 @@ treeshaker --input <file> --target <column> --task <type> [options]
 |---|---|---|---|
 | `--shap-threshold FLOAT` | `0.01` | Flag features with mean \|SHAP\| below this |
 | `--perm-threshold FLOAT` | `0.05` | Flag features with permutation importance below this |
-| `--compute-confidence-scores` | off | Compute calibrated confidence scores (0.5–1.0) for each feature's recommendation |
+| `--compute-confidence-scores` | off | Compute a confidence heuristic score (0.5–1.0, not a calibrated probability) for each feature's recommendation |
 
 ## Leakage detection
 

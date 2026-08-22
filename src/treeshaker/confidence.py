@@ -1,4 +1,4 @@
-"""Calibrated confidence scores calculation for features."""
+"""Confidence heuristic calculation for features."""
 
 import numpy as np
 
@@ -10,11 +10,14 @@ def compute_confidence_scores(
     shap_threshold: float,
     perm_threshold: float,
 ) -> np.ndarray:
-    """Compute calibrated confidence scores (0.5 to 1.0) for each feature.
+    """Compute a confidence heuristic (0.5 to 1.0) for each feature.
 
     Score = distance from nearest decision threshold, normalized via sigmoid
     so features clearly above/below threshold score near 1.0 and borderline
-    cases score near 0.5.
+    cases score near 0.5. This is a threshold-margin heuristic, not a
+    statistically calibrated probability -- nothing here is fit against
+    ground-truth outcomes, so a score of 0.85 does not mean "85% likely to
+    be a correct recommendation."
 
     Args:
         shap_importance: Array of mean absolute SHAP values, one per feature.
@@ -24,7 +27,7 @@ def compute_confidence_scores(
         perm_threshold: Decision threshold for permutation importance.
 
     Returns:
-        Array of calibrated confidence scores in range [0.5, 1.0].
+        Array of confidence heuristic scores in range [0.5, 1.0].
     """
     n_features = len(shap_importance)
     scores = np.zeros(n_features, dtype=float)
