@@ -872,6 +872,12 @@ class LeakageDetector:
                                 )
                             )
                             eta_squared = ss_between / ss_total
+                            # 0.35 itself is an unvalidated heuristic cutoff
+                            # (conventionally "large effect" in eta-squared
+                            # literature, but not derived or calibrated
+                            # against this specific check) -- the mechanism
+                            # above (why eta-squared, why split membership)
+                            # is well-founded, the exact number is not.
                             if eta_squared >= 0.35:
                                 warnings[name].append(
                                     f"Look-ahead leakage warning: '{name}'"
@@ -918,8 +924,13 @@ class LeakageDetector:
                         val_to_test_pct = val_to_test_change
 
                     # Flag if the transition smooths out unexpectedly at the
-                    # split boundary (suggests information leakage).
-                    # High threshold to avoid false positives on clean random data.
+                    # split boundary (suggests information leakage). Both
+                    # cutoffs (100% train->val swing, val->test settling to
+                    # under 5% of that swing) are unvalidated heuristics
+                    # picked to avoid false positives on clean random data --
+                    # not derived from a formula, and not calibrated against
+                    # any dataset. No standard changepoint-detection
+                    # convention exists for this specific check either.
                     if (
                         train_to_val_pct > 1.0
                         and val_to_test_pct < train_to_val_pct * 0.05

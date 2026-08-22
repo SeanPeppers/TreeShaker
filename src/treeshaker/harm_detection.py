@@ -14,6 +14,12 @@ class HarmDetector:
     Both signals are checked independently; a feature failing either check
     is flagged as harmful.
 
+    Both defaults (0.01, 0.05) are unvalidated fixed constants, not derived
+    from a formula or dataset -- see Config.shap_importance_threshold's
+    docstring for the full rationale and the distribution-relative
+    alternative (n_shadow_probes) available for anything where the default
+    matters.
+
     Args:
         shap_importance_threshold: Features with mean |SHAP| below this
             value are flagged. Defaults to 0.01.

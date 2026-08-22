@@ -169,7 +169,27 @@ class Config:
     optuna_config: OptunaConfig = field(default_factory=OptunaConfig)
     xgboost_config: XGBoostConfig = field(default_factory=XGBoostConfig)
     shap_importance_threshold: float = 0.01
+    """Below this mean |SHAP| value, a feature is a Drop candidate (see
+    HarmDetector.flag_harmful_features). Unvalidated constant, not derived
+    from any formula or dataset -- the same category as sklearn's own
+    SelectFromModel float threshold, which its docs also treat as the naive
+    fallback rather than the recommended option. No established
+    feature-selection method (Boruta, permutation-importance p-values,
+    SelectFromModel's own "mean"/"median" string options) actually
+    thresholds on a fixed absolute magnitude; they all threshold relative
+    to a null/noise distribution instead, since raw importance isn't
+    comparable across models or datasets. If this default matters for your
+    use case, n_shadow_probes > 0 gives that distribution-relative
+    alternative -- see shadow_probe_percentile below and
+    _apply_shadow_probe_gating in pipeline.py, which downgrades a Drop this
+    fixed threshold produces when the feature's importance actually clears
+    the empirical shadow-probe noise floor."""
     permutation_importance_threshold: float = 0.05
+    """Below this permutation importance (score drop from shuffling), a
+    feature is a Drop candidate (see HarmDetector.flag_harmful_features).
+    Same caveat as shap_importance_threshold above: an unvalidated fixed
+    constant, not derived from any formula -- use n_shadow_probes > 0 for
+    the distribution-relative alternative if this default matters."""
     compute_shap_interactions: bool = False
     leakage_config: LeakageConfig = field(default_factory=LeakageConfig)
     feature_groups: dict[str, list[str]] | None = None
