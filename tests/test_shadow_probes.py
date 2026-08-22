@@ -149,3 +149,59 @@ def test_pure_noise_dataset(tmp_path):
     # at least 2 are flagged (a very safe lower bound).
     flagged_count = results["shadow_probe_flag"].sum()
     assert flagged_count >= 2
+
+
+def _make_gating_pipeline(n_shadow_probes: int = 5) -> FeatureSelectionPipeline:
+    """A pipeline instance with just enough state set for
+    _apply_shadow_probe_gating to be tested as a pure function against a
+    hand-crafted results DataFrame, without running the full pipeline
+    (deterministic -- no dependence on real training producing a feature
+    that happens to land on either side of the noise floor)."""
+    config = Config(
+        input_file="x.csv",
+        target_column="target",
+        task="binary",
+        n_shadow_probes=n_shadow_probes,
+        shadow_probe_percentile=90.0,
+    )
+    return FeatureSelectionPipeline(config)
+
+
+def test_shadow_probe_gating_downgrades_disputed_drop():
+    """A Drop feature whose importance clears the noise floor
+    (shadow_probe_flag=False) is downgraded to Caution."""
+    pipeline = _make_gating_pipeline()
+    results = pd.DataFrame(
+        {
+            "feature_name": ["genuinely_noisy", "disputed", "kept"],
+            "shap_importance": [0.001, 0.03, 0.5],
+            "recommendation": ["Drop", "Drop", "Keep"],
+            "reason": ["low importance", "low importance", ""],
+            "shadow_probe_flag": [True, False, False],
+        }
+    )
+
+    gated = pipeline._apply_shadow_probe_gating(results)
+
+    # genuinely_noisy: Drop AND doesn't clear the floor -> stays Drop.
+    assert gated.loc[0, "recommendation"] == "Drop"
+    assert gated.loc[0, "reason"] == "low importance"
+    # disputed: Drop but DOES clear the floor -> downgraded to Caution,
+    # original reason preserved, noise-floor note appended.
+    assert gated.loc[1, "recommendation"] == "Caution"
+    assert "low importance" in gated.loc[1, "reason"]
+    assert "shadow-probe noise floor" in gated.loc[1, "reason"]
+    # Keep is never touched regardless of its shadow_probe_flag value.
+    assert gated.loc[2, "recommendation"] == "Keep"
+    assert gated.loc[2, "reason"] == ""
+
+
+def test_pipeline_shadow_probe_gating_disabled_by_default(binary_csv, tmp_path):
+    """n_shadow_probes=0 (default) never reaches _apply_shadow_probe_gating
+    at all -- no shadow_probe_flag column, recommendations driven purely by
+    the fixed thresholds, same as before this gating existed."""
+    config = make_fast_config(binary_csv, "binary", tmp_path, skip_tuning=True)
+    assert config.n_shadow_probes == 0
+    results = FeatureSelectionPipeline(config).run()
+    assert "shadow_probe_flag" not in results.columns
+    assert not any("shadow-probe noise floor" in str(r) for r in results["reason"] if r)
