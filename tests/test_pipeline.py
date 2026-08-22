@@ -603,15 +603,34 @@ def test_pipeline_severe_imbalance_keeps_high_shap_low_perm_feature(tmp_path):
     # synthetic dataset), and force permutation importance to collapse
     # toward zero for both features, as actually happens under severe
     # imbalance with accuracy/ROC-AUC-based metrics.
+    # Severe imbalance now auto-enables 30 shadow probes, so downstream
+    # calls fit on 2 real + 30 probe columns -- the mocks must return an
+    # array shaped to whatever feature_names they're actually called with
+    # (real-features call vs. shadow-probe-inflated call) rather than a
+    # fixed size, or the leakage detector's shap_importance/feature_names
+    # zip breaks.
+    def _shap_side_effect(**kwargs):
+        n = len(kwargs["feature_names"])
+        # Probes get a small but nonzero floor (0.005) so feature_1's 0.002
+        # stays below it (shadow_probe_flag=True, Drop undisputed) --
+        # an exact-zero floor would trivially let any nonzero SHAP value
+        # "clear" it and get spuriously downgraded to Caution.
+        values = np.full(n, 0.005)
+        values[0] = 0.816
+        if n > 1:
+            values[1] = 0.002
+        return values
+
+    def _perm_side_effect(**kwargs):
+        n = len(kwargs["feature_names"])
+        return np.full(n, 0.0001), np.zeros(n)
+
     with (
         patch("treeshaker.pipeline.compute_permutation_importance") as mock_perm,
         patch("treeshaker.pipeline.compute_shap_importance") as mock_shap,
     ):
-        mock_perm.return_value = (
-            np.array([0.0001, 0.0001]),
-            np.array([0.0, 0.0]),
-        )
-        mock_shap.return_value = np.array([0.816, 0.002])
+        mock_perm.side_effect = _perm_side_effect
+        mock_shap.side_effect = _shap_side_effect
         results = pipeline.run()
 
     assert pipeline.severe_class_imbalance is True

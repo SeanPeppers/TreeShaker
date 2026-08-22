@@ -168,8 +168,14 @@ def check_class_imbalance(
         f" ROC-AUC can barely move regardless of which feature is shuffled,"
         f" which makes permutation importance unreliable — features may"
         f" look unimportant simply because the metric is insensitive."
-        f" Consider using a metric more sensitive to the minority class"
-        f" (e.g. PR-AUC or F1) when interpreting these results."
+        f" SHAP importance is also affected at this level of imbalance (the"
+        f" small minority sample lets boosting find spurious structure in"
+        f" noise columns, inflating their SHAP value), so switching"
+        f" permutation metrics alone would not fix it. TreeShaker"
+        f" automatically cross-checks Keep/Caution features against a"
+        f" shadow-probe noise floor in this situation (see"
+        f" FeatureSelectionPipeline._apply_severe_imbalance_noise_floor_gating)"
+        f" instead of relying on the fixed importance thresholds alone."
     )
 
 
