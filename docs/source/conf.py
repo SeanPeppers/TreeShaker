@@ -15,11 +15,9 @@ extensions = [
     "myst_parser",
 ]
 
-templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 html_theme = "furo"
-html_static_path = ["_static"]
 html_title = "TreeShaker — Automated Feature Selection"
 html_theme_options = {
     "sidebar_hide_name": False,
@@ -34,9 +32,12 @@ myst_enable_extensions = [
     "substitution",
     "tasklist",
 ]
+# Auto-generate #slugified-heading anchors up to h3, so the [Foo](#foo)-style
+# cross-references throughout these docs (e.g. config_reference.md's links
+# to its own ### LeakageConfig/OptunaConfig/etc. sections) actually resolve
+# -- without this, MyST doesn't generate heading anchors at all.
+myst_heading_anchors = 3
 
-# Support both .rst and .md files
-source_suffix = {
-    ".rst": None,
-    ".md": None,
-}
+# All docs are Markdown (no .rst files in this repo); myst_parser
+# auto-registers itself for this suffix once listed in `extensions` above.
+source_suffix = [".md"]
