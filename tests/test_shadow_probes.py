@@ -205,3 +205,112 @@ def test_pipeline_shadow_probe_gating_disabled_by_default(binary_csv, tmp_path):
     results = FeatureSelectionPipeline(config).run()
     assert "shadow_probe_flag" not in results.columns
     assert not any("shadow-probe noise floor" in str(r) for r in results["reason"] if r)
+
+
+def test_severe_imbalance_noise_floor_gating_promotes_to_drop():
+    """A Keep/Caution feature at or below the noise floor is demoted to
+    Drop when severe class imbalance is in play -- unlike
+    _apply_shadow_probe_gating, this one creates new Drops, since under
+    severe imbalance nothing gets flagged Drop by the fixed thresholds in
+    the first place (verified empirically against the benchmark script's
+    imbalanced scenario -- see the pipeline-level test below)."""
+    pipeline = _make_gating_pipeline()
+    results = pd.DataFrame(
+        {
+            "feature_name": ["noisy_but_kept", "noisy_but_caution", "real_signal"],
+            "shap_importance": [0.03, 0.05, 0.9],
+            "recommendation": ["Keep", "Caution", "Keep"],
+            "reason": ["", "some other note", ""],
+            "shadow_probe_flag": [True, True, False],
+        }
+    )
+
+    gated = pipeline._apply_severe_imbalance_noise_floor_gating(results)
+
+    # At the noise floor and Keep -> demoted to Drop.
+    assert gated.loc[0, "recommendation"] == "Drop"
+    assert "Severe class imbalance" in gated.loc[0, "reason"]
+    assert "'Keep'" in gated.loc[0, "reason"]
+    # At the noise floor and Caution -> demoted to Drop too, existing
+    # reason preserved.
+    assert gated.loc[1, "recommendation"] == "Drop"
+    assert "some other note" in gated.loc[1, "reason"]
+    assert "'Caution'" in gated.loc[1, "reason"]
+    # Clears the noise floor -> untouched regardless of this method running.
+    assert gated.loc[2, "recommendation"] == "Keep"
+    assert gated.loc[2, "reason"] == ""
+
+
+def test_severe_imbalance_noise_floor_gating_never_touches_existing_drop():
+    """A feature already Drop is left alone by this method (it only
+    demotes Keep/Caution -- _apply_shadow_probe_gating owns the
+    Drop-to-Caution direction, and the two never overlap in what they
+    touch)."""
+    pipeline = _make_gating_pipeline()
+    results = pd.DataFrame(
+        {
+            "feature_name": ["already_dropped"],
+            "shap_importance": [0.001],
+            "recommendation": ["Drop"],
+            "reason": ["low importance"],
+            "shadow_probe_flag": [True],
+        }
+    )
+
+    gated = pipeline._apply_severe_imbalance_noise_floor_gating(results)
+
+    assert gated.loc[0, "recommendation"] == "Drop"
+    assert gated.loc[0, "reason"] == "low importance"
+
+
+def test_pipeline_severe_imbalance_auto_enables_noise_floor_gating(tmp_path):
+    """The exact severe-imbalance scenario the benchmark script found
+    (0.000 drop-recall) is now fixed at default Config -- no
+    n_shadow_probes set by the caller, auto-enabled because
+    check_class_imbalance fires. Regression guard for the actual bug."""
+    from sklearn.datasets import make_classification
+
+    X, y = make_classification(
+        n_samples=3000,
+        n_features=30,
+        n_informative=6,
+        n_redundant=4,
+        n_repeated=0,
+        n_classes=2,
+        n_clusters_per_class=1,
+        weights=[0.93, 0.07],
+        class_sep=1.5,
+        shuffle=False,
+        random_state=0,
+    )
+    cols = [f"f{i}" for i in range(30)]
+    df = pd.DataFrame(X, columns=cols)
+    df["target"] = y
+    csv_path = tmp_path / "imbalanced.csv"
+    df.to_csv(csv_path, index=False)
+
+    config = make_fast_config(str(csv_path), "binary", tmp_path, skip_tuning=True)
+    assert config.n_shadow_probes == 0  # not set by the caller
+
+    pipeline = FeatureSelectionPipeline(config)
+    results = pipeline.run()
+
+    assert pipeline.severe_class_imbalance is True
+    assert pipeline._effective_n_shadow_probes == 30
+    assert "shadow_probe_flag" in results.columns
+
+    results = results.set_index("feature_name").loc[cols]
+    n_signal = 10  # 6 informative + 4 redundant
+    is_noise = np.array([i >= n_signal for i in range(30)])
+    is_drop = (results["recommendation"] == "Drop").to_numpy()
+    tp = int((is_drop & is_noise).sum())
+    fn = int((~is_drop & is_noise).sum())
+    drop_recall = tp / (tp + fn) if (tp + fn) else 1.0
+
+    # Was exactly 0.000 before this fix; empirically ~1.0 at these
+    # settings across seeds -- assert a high but not knife's-edge bound so
+    # this isn't flaky on the RNG's own variance.
+    assert drop_recall >= 0.8, (
+        f"drop_recall={drop_recall:.3f} -- severe-imbalance noise floor"
+        f" gating regressed"
+    )

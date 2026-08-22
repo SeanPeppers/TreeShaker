@@ -602,6 +602,14 @@ class FeatureSelectionPipeline:
         self.severe_class_imbalance: bool = False
         self.suggested_features: list[SyntheticFeatureSuggestion] | None = None
         self._best_params: dict = {}
+        # Set in run(), after load_data() determines severe_class_imbalance:
+        # equal to config.n_shadow_probes/shadow_probe_percentile unless
+        # severe imbalance is detected and the user didn't already opt into
+        # shadow probes, in which case these are auto-set (see run()) so the
+        # noise-floor cross-check activates for a population where the
+        # fixed importance thresholds are already known to be unreliable.
+        self._effective_n_shadow_probes: int = 0
+        self._effective_shadow_probe_percentile: float = 100.0
 
     def _train_val_data(self) -> pd.DataFrame:
         """Concatenate train and validation splits for final-model fitting.
@@ -1091,8 +1099,12 @@ class FeatureSelectionPipeline:
         produced, that Drop isn't well-supported: downgrade to Caution
         rather than leaving it as an outright Drop.
 
-        Only reachable when n_shadow_probes > 0 (opt-in, 0 by default) --
-        default pipeline behavior is unaffected.
+        Only reachable when shadow probes are active -- either the user set
+        n_shadow_probes > 0 (opt-in, 0 by default), or severe class
+        imbalance was detected and probes were auto-enabled (see run() and
+        _apply_severe_imbalance_noise_floor_gating). Default pipeline
+        behavior on balanced data with n_shadow_probes unset is unaffected
+        either way.
 
         Args:
             results: The results DataFrame, already carrying
@@ -1109,12 +1121,77 @@ class FeatureSelectionPipeline:
         )
         for idx in results.index[disputed_drop_mask]:
             results.loc[idx, "recommendation"] = "Caution"
+            pct = self._effective_shadow_probe_percentile
             note = (
                 "Beats the shadow-probe noise floor "
-                f"(shadow_probe_percentile={self.config.shadow_probe_percentile:.1f}) "
+                f"(shadow_probe_percentile={pct:.1f}) "
                 "despite the fixed importance threshold flagging it Drop; "
                 "the empirical noise-floor check disputes that call, so "
                 "this is no longer flagged as an outright Drop."
+            )
+            existing_reason = results.loc[idx, "reason"]
+            results.loc[idx, "reason"] = (
+                f"{existing_reason} {note}".strip() if existing_reason else note
+            )
+        return results
+
+    def _apply_severe_imbalance_noise_floor_gating(
+        self, results: pd.DataFrame
+    ) -> pd.DataFrame:
+        """
+        Under severe class imbalance, demote Keep/Caution to Drop when a
+        feature is at or below the shadow-probe noise floor.
+
+        Severe class imbalance inflates SHAP importance for genuinely
+        uninformative features -- with few minority-class examples,
+        boosting finds *some* apparent structure in noise columns purely
+        from that small sample's own variance, pushing their SHAP
+        importance above the fixed shap_importance_threshold (confirmed
+        empirically: noise-feature SHAP can reach 0.02-0.36 under this
+        condition, all above the default 0.01 constant). This isn't a
+        class-weighting problem (scale_pos_weight doesn't change it,
+        verified directly) -- it's the same "fixed absolute threshold
+        breaks when the ambient noise level shifts" failure the collinearity
+        and shadow-probe gating above already handle, just triggered by a
+        different condition.
+
+        A shadow probe's own SHAP importance inflates by the same
+        mechanism, so it remains a valid relative noise floor even here
+        (verified empirically: at n_shadow_probes=30, percentile=100.0, the
+        floor correctly identifies close to 100% of true noise features).
+        Unlike _apply_shadow_probe_gating (which only ever downgrades an
+        existing Drop, and is unaffected by this method), this one is
+        bidirectional -- it's the only way a noise feature gets flagged at
+        all under severe imbalance, since the primary engine's fixed
+        thresholds don't catch it in the first place.
+
+        Only called from run() when self.severe_class_imbalance is True.
+
+        Args:
+            results: The results DataFrame, already carrying
+                shadow_probe_flag (real feature rows only -- probe rows
+                already stripped), after _apply_shadow_probe_gating has run.
+
+        Returns:
+            results, with any Keep/Caution feature at or below the noise
+            floor demoted to Drop and its reason updated in place.
+        """
+        results = results.copy()
+        at_floor_mask = results["shadow_probe_flag"] & (
+            results["recommendation"] != "Drop"
+        )
+        for idx in results.index[at_floor_mask]:
+            prior_recommendation = results.loc[idx, "recommendation"]
+            results.loc[idx, "recommendation"] = "Drop"
+            pct = self._effective_shadow_probe_percentile
+            note = (
+                "Severe class imbalance was detected for this dataset, "
+                "under which the fixed importance thresholds are known to "
+                "be unreliable (see check_class_imbalance); this feature's "
+                "importance is at or below the shadow-probe noise floor "
+                f"(shadow_probe_percentile={pct:.1f}), so it's flagged Drop "
+                f"despite being {prior_recommendation!r} under the standard "
+                "thresholds."
             )
             existing_reason = results.loc[idx, "reason"]
             results.loc[idx, "reason"] = (
@@ -1183,22 +1260,43 @@ class FeatureSelectionPipeline:
         if self.train_data is None or self.val_data is None or self.test_data is None:
             raise RuntimeError("load_data() did not populate train/val/test data")
 
-        if self.config.n_shadow_probes > 0:
+        self._effective_n_shadow_probes = self.config.n_shadow_probes
+        self._effective_shadow_probe_percentile = self.config.shadow_probe_percentile
+        if self._effective_n_shadow_probes == 0 and self.severe_class_imbalance:
+            # The fixed shap/permutation-importance thresholds are known to
+            # be unreliable under this level of imbalance (see
+            # check_class_imbalance's warning) -- auto-enable shadow probes
+            # as a self-calibrating noise floor instead, at Boruta's own
+            # convention (100th percentile) and enough probes (30) for a
+            # stable estimate. Only activates when the user didn't already
+            # set n_shadow_probes themselves; default behavior for balanced
+            # data is completely unaffected.
+            self._effective_n_shadow_probes = 30
+            self._effective_shadow_probe_percentile = 100.0
+            self.logger.info(
+                "Severe class imbalance detected: auto-enabling 30 shadow"
+                " probes (100th percentile noise floor) to cross-check"
+                " Keep/Caution features against, since the fixed importance"
+                " thresholds alone are unreliable at this level of"
+                " imbalance."
+            )
+
+        if self._effective_n_shadow_probes > 0:
             from .shadow_probes import generate_shadow_probes
 
             train_probes = generate_shadow_probes(
                 self.train_data[self.feature_names],
-                self.config.n_shadow_probes,
+                self._effective_n_shadow_probes,
                 self.config.random_seed,
             )
             val_probes = generate_shadow_probes(
                 self.val_data[self.feature_names],
-                self.config.n_shadow_probes,
+                self._effective_n_shadow_probes,
                 self.config.random_seed,
             )
             test_probes = generate_shadow_probes(
                 self.test_data[self.feature_names],
-                self.config.n_shadow_probes,
+                self._effective_n_shadow_probes,
                 self.config.random_seed,
             )
             self.train_data = pd.concat([self.train_data, train_probes], axis=1)
@@ -1708,7 +1806,7 @@ class FeatureSelectionPipeline:
             )
 
         full_feature_names = list(self.feature_names)
-        if self.config.n_shadow_probes > 0:
+        if self._effective_n_shadow_probes > 0:
             from .shadow_probes import (
                 add_shadow_probe_warnings,
                 compute_probe_threshold,
@@ -1719,7 +1817,7 @@ class FeatureSelectionPipeline:
             ]
             probe_importances = probe_rows["shap_importance"].to_numpy()
             probe_threshold = compute_probe_threshold(
-                probe_importances, self.config.shadow_probe_percentile
+                probe_importances, self._effective_shadow_probe_percentile
             )
 
             self.results = self.results[
@@ -1727,6 +1825,10 @@ class FeatureSelectionPipeline:
             ].reset_index(drop=True)
             self.results = add_shadow_probe_warnings(self.results, probe_threshold)
             self.results = self._apply_shadow_probe_gating(self.results)
+            if self.severe_class_imbalance:
+                self.results = self._apply_severe_imbalance_noise_floor_gating(
+                    self.results
+                )
 
             real_indices = [
                 i
@@ -1777,7 +1879,7 @@ class FeatureSelectionPipeline:
                 data=train_val_data,
                 feature_names=full_feature_names,
             )
-            if self.interactions is not None and self.config.n_shadow_probes > 0:
+            if self.interactions is not None and self._effective_n_shadow_probes > 0:
                 self.interactions = self.interactions[
                     ~self.interactions["feature_a"].str.startswith("__shadow_probe_")
                     & ~self.interactions["feature_b"].str.startswith("__shadow_probe_")
