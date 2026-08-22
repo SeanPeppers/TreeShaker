@@ -457,24 +457,46 @@ def test_pipeline_synthesis_disabled_by_default(regression_csv, tmp_path):
     assert set(results.columns) == BASE_RESULT_COLUMNS
 
 
-def test_pipeline_synthesis_requires_interactions_warns_and_noops(
-    regression_csv, tmp_path, caplog
+def test_config_synthesize_from_interactions_autofixes_compute_shap_interactions(
+    tmp_path,
 ):
-    """synthesize_from_interactions=True without compute_shap_interactions
-    warns and no-ops."""
-    config = make_fast_config(regression_csv, "regression", tmp_path)
-    config.skip_tuning = True
-    config.compute_shap_interactions = False
-    config.synthetic_config = SyntheticConfig(synthesize_from_interactions=True)
+    """Constructing Config with synthesize_from_interactions=True but
+    compute_shap_interactions left at its default (False) auto-enables
+    compute_shap_interactions in __post_init__, rather than leaving a
+    combination that would otherwise silently no-op. This is what every
+    real caller (CLI, MCP, direct Config construction) actually goes
+    through -- unlike mutating an already-constructed Config's fields
+    directly, which bypasses __post_init__ entirely."""
+    config = make_fast_config(
+        "x.csv",
+        "regression",
+        tmp_path,
+        synthetic_config=SyntheticConfig(synthesize_from_interactions=True),
+    )
+    assert config.compute_shap_interactions is True
+
+
+def test_pipeline_synthesis_reachable_via_bare_synthesize_flag(
+    regression_csv, tmp_path
+):
+    """A caller that only sets synthesize_from_interactions=True (the CLI's
+    --synthesize-features / MCP's synthesize_features, without separately
+    setting compute_shap_interactions) gets synthesis actually running --
+    not the old silent no-op -- because Config.__post_init__ auto-enables
+    compute_shap_interactions."""
+    config = make_fast_config(
+        regression_csv,
+        "regression",
+        tmp_path,
+        skip_tuning=True,
+        synthetic_config=SyntheticConfig(synthesize_from_interactions=True),
+    )
+    assert config.compute_shap_interactions is True
 
     pipeline = FeatureSelectionPipeline(config)
-    with caplog.at_level("WARNING"):
-        pipeline.run()
+    pipeline.run()
 
-    assert pipeline.suggested_features is None
-    assert any(
-        "synthesize_from_interactions" in record.message for record in caplog.records
-    )
+    assert pipeline.interactions is not None
 
 
 def test_pipeline_synthesis_enabled_surfaces_candidate(tmp_path):

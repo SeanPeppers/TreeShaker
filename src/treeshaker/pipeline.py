@@ -1174,10 +1174,10 @@ class FeatureSelectionPipeline:
             exceeding config.synthetic_config.mi_threshold are saved to
             `<output_stem>_suggested_features.csv` and made available on
             self.suggested_features. This is advisory only -- suggestions
-            are never added to the model or training data. If
-            synthesize_from_interactions is True but
-            compute_shap_interactions is False, a warning is logged and
-            this step is skipped (self.suggested_features stays None).
+            are never added to the model or training data. Setting
+            synthesize_from_interactions=True without also setting
+            compute_shap_interactions=True auto-enables the latter (see
+            Config.__post_init__) rather than silently skipping synthesis.
         """
         self.load_data()
         if self.train_data is None or self.val_data is None or self.test_data is None:
@@ -1828,13 +1828,12 @@ class FeatureSelectionPipeline:
                             f" added {len(winners)} synthetic feature(s) to"
                             f" results: {sorted(winners)}"
                         )
-        elif self.config.synthetic_config.synthesize_from_interactions:
-            self.logger.warning(
-                "synthetic_config.synthesize_from_interactions is True but"
-                " compute_shap_interactions is False; skipping synthetic"
-                " feature suggestion. Set compute_shap_interactions=True to"
-                " enable it."
-            )
+        # No elif for synthesize_from_interactions-without-
+        # compute_shap_interactions here: Config.__post_init__ now
+        # guarantees compute_shap_interactions=True whenever
+        # synthesize_from_interactions=True, for every caller (CLI, MCP,
+        # direct Config construction) -- that combination can no longer
+        # reach this point.
 
         if self.config.use_mlflow:
             log_run_to_mlflow(
