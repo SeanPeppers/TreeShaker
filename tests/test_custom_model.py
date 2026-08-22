@@ -97,3 +97,25 @@ def test_custom_model_shap_degrades_gracefully_for_non_tree_model(binary_csv, tm
     # shap_importance is either computed via the model-agnostic fallback, or
     # all zeros if SHAP failed entirely -- either way, no NaNs/crash.
     assert results["shap_importance"].notna().all()
+
+
+def test_custom_model_shap_interactions_skip_gracefully_for_non_tree_model(
+    binary_csv, tmp_path
+):
+    """Unlike plain SHAP importance, interaction values have no
+    model-agnostic fallback -- compute_shap_interactions=True with a
+    non-tree custom_model must skip interactions (self.interactions stays
+    None) rather than crashing the whole run."""
+    config = make_fast_config(
+        binary_csv,
+        "binary",
+        tmp_path,
+        skip_tuning=True,
+        custom_model=LogisticRegression(max_iter=200),
+        compute_shap_interactions=True,
+    )
+    pipeline = FeatureSelectionPipeline(config)
+    results = pipeline.run()
+
+    assert isinstance(results, pd.DataFrame)
+    assert pipeline.interactions is None

@@ -49,6 +49,29 @@ See [LeakageConfig](#leakageconfig) below.
 | `feature_groups` | `--feature-groups` | dict or None | `None` | JSON mapping group name to list of feature names |
 | `group_by_prefix` | `--group-by-prefix` | bool | `False` | Auto-derive groups from prefix before last underscore |
 
+When set, each group's member columns are collapsed in the main results
+table into one aggregate group row — useful for treating a block of
+related columns (e.g. a 768-dim embedding flattened into
+`embedding_0`..`embedding_767`) as one unit instead of hundreds of
+individually near-meaningless verdicts:
+- Group SHAP importance is the sum of member SHAP importances.
+- Group permutation importance shuffles every member column together (not
+  independently — that's what "remove this group" means for correlated
+  columns).
+- The group's Keep/Caution/Drop verdict is computed from those aggregate
+  values via the same thresholds as any other feature.
+- Leakage/temporal warnings that only reference another member of the
+  *same* group are dropped as expected/uninteresting; warnings referencing
+  anything else still surface on the group row.
+
+Ungrouped columns are unaffected. Every member column must exist among the
+dataset's feature columns (raises a config error at run time otherwise). A
+separate `<output>_groups.csv` SHAP-sum summary is still written, as
+before. Only applies to permutation importance and SHAP-derived columns —
+other optional per-backend columns (e.g. `boruta_decision`,
+`lightgbm_importance`) are not aggregated to the group level and are
+`NaN` on group rows.
+
 Example: `--feature-groups '{"price": ["price_min", "price_max"]}'`
 
 ### Permutation importance

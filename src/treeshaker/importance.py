@@ -169,7 +169,7 @@ def compute_shap_interactions(
     data: pd.DataFrame,
     feature_names: list[str],
     top_n: int = 10,
-) -> pd.DataFrame:
+) -> pd.DataFrame | None:
     """
     Compute pairwise SHAP interaction strengths between features.
 
@@ -186,7 +186,10 @@ def compute_shap_interactions(
     pair is reported once.
 
     Args:
-        model: A fitted XGBoost model (XGBClassifier or XGBRegressor).
+        model: A fitted model. Interaction values require a tree-based
+            model (TreeExplainer) -- unlike compute_shap_importance, there
+            is no model-agnostic fallback for interactions, so a non-tree
+            config.custom_model returns None here instead of crashing.
         data: Feature DataFrame (no target column) used for explanation.
         feature_names: Ordered list of feature column names.
         top_n: Number of strongest interacting pairs to return.
@@ -194,13 +197,29 @@ def compute_shap_interactions(
     Returns:
         DataFrame with columns feature_a, feature_b, interaction_strength,
         sorted by interaction_strength descending, limited to top_n rows.
+        None if the model isn't tree-based (TreeExplainer failed) -- see
+        `model` above.
     """
     logger.info("Computing SHAP interaction values (this can be slow)")
-    explainer = shap.TreeExplainer(_shap_model(model))
-    # Note: shap_interaction_values does not accept check_additivity (unlike
-    # shap_values, see compute_shap_importance) -- it does not run the
-    # additivity assertion in the first place.
-    interaction_values = explainer.shap_interaction_values(data[feature_names])
+    try:
+        explainer = shap.TreeExplainer(_shap_model(model))
+        # Note: shap_interaction_values does not accept check_additivity
+        # (unlike shap_values, see compute_shap_importance) -- it does not
+        # run the additivity assertion in the first place.
+        interaction_values = explainer.shap_interaction_values(data[feature_names])
+    except Exception as tree_err:
+        # TreeExplainer raises whenever `model` isn't tree-based -- expected
+        # for non-tree config.custom_model estimators. There's no
+        # model-agnostic interaction-values equivalent to fall back to
+        # (unlike compute_shap_importance's shap.Explainer fallback), so
+        # this feature is simply unavailable for this model rather than
+        # crashing the whole run.
+        logger.warning(
+            f"shap.TreeExplainer failed ({tree_err}); SHAP interaction"
+            " values require a tree-based model and have no model-agnostic"
+            " fallback, so interactions are skipped for this run."
+        )
+        return None
 
     if isinstance(interaction_values, list):
         # Older shap versions: multiclass returns a list of arrays, one per
@@ -469,6 +488,101 @@ def compute_permutation_importance(
             )
             importances[i] = mean_drop
             importances_std[i] = std_drop
+
+    return importances, importances_std
+
+
+def _permutation_importance_for_group(
+    i: int,
+    members: list[str],
+    model: Any,
+    X: pd.DataFrame,
+    y: np.ndarray,
+    baseline_score: float,
+    metric_fn: Callable[[np.ndarray, np.ndarray], float],
+    use_predict_proba: bool,
+    n_repeats: int,
+) -> tuple[float, float]:
+    """Same idea as `_permutation_importance_for_feature`, but applies one
+    shared row-permutation to every member column at once per repeat --
+    "remove this feature group" means shuffling the whole block together
+    (e.g. an embedding), not shuffling each dimension independently (which
+    would still let the model reconstruct most of the original signal from
+    the other, unshuffled dimensions of the same embedding)."""
+    repeat_drops = np.zeros(n_repeats)
+    for r in range(n_repeats):
+        X_shuffled = X.copy()
+        rng = np.random.default_rng(seed=42 + i * n_repeats + r)
+        perm = rng.permutation(len(X_shuffled))
+        for feature in members:
+            X_shuffled[feature] = pd.Series(
+                X_shuffled[feature].to_numpy()[perm],
+                index=X_shuffled.index,
+                dtype=X[feature].dtype,
+            )
+        shuffled_preds = _get_predictions(model, X_shuffled, use_predict_proba)
+        shuffled_score = metric_fn(y, shuffled_preds)
+        repeat_drops[r] = baseline_score - shuffled_score
+    return float(repeat_drops.mean()), float(repeat_drops.std())
+
+
+def compute_group_permutation_importance(
+    model: Any,
+    data: pd.DataFrame,
+    target_column: str,
+    feature_names: list[str],
+    feature_groups: dict[str, list[str]],
+    metric_fn: Callable[[np.ndarray, np.ndarray], float],
+    use_predict_proba: bool = False,
+    n_repeats: int = 5,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Group-level counterpart to `compute_permutation_importance`: shuffles
+    every member column of a group together (see
+    `_permutation_importance_for_group`) and reports one importance value
+    per group instead of one per member column.
+
+    Args:
+        model: A fitted model.
+        data: DataFrame including both features and the target column.
+        target_column: Name of the target column in data.
+        feature_names: All feature columns the model was fitted on
+            (grouped and ungrouped) -- predictions need every column, not
+            just a group's own members, so this must match the model's
+            actual training columns.
+        feature_groups: Mapping of group name -> member column names (see
+            Config.feature_groups). Every member must be present in
+            feature_names.
+        metric_fn: Callable with signature (y_true, y_pred) -> float, where
+            higher values indicate better performance.
+        use_predict_proba: See `compute_permutation_importance`.
+        n_repeats: See `compute_permutation_importance`. Defaults to 5.
+
+    Returns:
+        A tuple (importances, importances_std), each of shape
+        (n_groups,), in the same order as `feature_groups`.
+    """
+    X = data[feature_names].copy()
+    y = np.asarray(data[target_column].values)
+
+    baseline_preds = _get_predictions(model, X, use_predict_proba)
+    baseline_score = metric_fn(y, baseline_preds)
+
+    importances = np.zeros(len(feature_groups))
+    importances_std = np.zeros(len(feature_groups))
+    for i, members in enumerate(feature_groups.values()):
+        mean_drop, std_drop = _permutation_importance_for_group(
+            i,
+            members,
+            model,
+            X,
+            y,
+            baseline_score,
+            metric_fn,
+            use_predict_proba,
+            n_repeats,
+        )
+        importances[i] = mean_drop
+        importances_std[i] = std_drop
 
     return importances, importances_std
 

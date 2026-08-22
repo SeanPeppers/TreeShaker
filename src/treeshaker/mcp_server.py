@@ -278,7 +278,14 @@ def run_pipeline(
         n_permutations: Number of shuffles per feature for permutation importance.
         permutation_metric: Optional override metric for permutation importance.
         shap_sample_size: Optional row cap for SHAP importance computation.
-        group_by_prefix: Auto-derive feature groups from common name prefixes.
+        group_by_prefix: Auto-derive feature groups from common name
+            prefixes (or pass an explicit mapping via
+            config_overrides={"feature_groups": {...}}). Either way, each
+            group's member columns are collapsed in the main results table
+            into one aggregate Keep/Caution/Drop row (SHAP summed across
+            members, permutation importance computed by shuffling every
+            member together) -- see config_reference.md's "Feature groups"
+            section for the full behavior.
         use_boruta: Run Boruta feature selection (opt-in).
         use_rfecv: Run sklearn RFECV feature selection (opt-in).
         use_lightgbm: Compute LightGBM feature importances (opt-in).

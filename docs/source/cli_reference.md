@@ -74,6 +74,15 @@ treeshaker --input <file> --target <column> --task <type> [options]
 | `--feature-groups JSON` | `{}` | Feature groups as JSON mapping group name to feature list |
 | `--group-by-prefix` | off | Auto-derive groups from common prefix before last underscore |
 
+When set, each group's member columns are replaced in the main results
+table by one aggregate group row (its own SHAP/permutation importance and
+Keep/Caution/Drop verdict — SHAP is summed across members, permutation
+importance is computed by shuffling every member together, since that's
+what "remove this group" actually means for correlated columns like a
+flattened embedding). Ungrouped columns keep their own individual rows and
+behavior, unaffected. A separate `<output>_groups.csv` SHAP-sum summary is
+still written alongside, as before.
+
 **Examples:**
 ```bash
 # Explicit grouping

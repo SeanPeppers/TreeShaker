@@ -8,7 +8,8 @@ import pytest
 from conftest import BASE_RESULT_COLUMNS
 from conftest import make_config as make_fast_config
 
-from treeshaker.config import BootstrapConfig, OptunaConfig, XGBoostConfig
+from treeshaker.config import BootstrapConfig, Config, OptunaConfig, XGBoostConfig
+from treeshaker.exceptions import ConfigError
 from treeshaker.pipeline import FeatureSelectionPipeline
 from treeshaker.residual_diagnostics import ResidualConfig
 from treeshaker.synthetic_features import SyntheticConfig, SyntheticFeatureSuggestion
@@ -131,8 +132,28 @@ def test_explicit_feature_groups(binary_csv, tmp_path):
     pipeline = FeatureSelectionPipeline(config)
     results = pipeline.run()
 
-    # Per-feature schema is unchanged.
-    assert set(results.columns) == BASE_RESULT_COLUMNS
+    # Grouped member columns no longer get their own row -- one aggregate
+    # group row replaces them, ungrouped columns are unaffected, and a new
+    # feature_group_members column names each group's constituents.
+    assert set(results.columns) == BASE_RESULT_COLUMNS | {"feature_group_members"}
+    assert {"group_a", "group_b"}.issubset(set(results["feature_name"]))
+    for raw_feature in ("feature_0", "feature_1", "feature_2", "feature_3"):
+        assert raw_feature not in set(results["feature_name"])
+
+    group_a_row = results[results["feature_name"] == "group_a"].iloc[0]
+    assert group_a_row["recommendation"] in {"Keep", "Caution", "Drop"}
+    assert set(group_a_row["feature_group_members"].split(", ")) == {
+        "feature_0",
+        "feature_1",
+    }
+    # Ungrouped rows keep the standard schema, no feature_group_members value.
+    ungrouped_names = set(results["feature_name"]) - {"group_a", "group_b"}
+    assert ungrouped_names  # binary_csv has more than 4 features
+    assert (
+        results[results["feature_name"].isin(ungrouped_names)]["feature_group_members"]
+        .isna()
+        .all()
+    )
 
     assert pipeline.group_summary is not None
     summary = pipeline.group_summary
@@ -150,14 +171,13 @@ def test_explicit_feature_groups(binary_csv, tmp_path):
     saved = pd.read_csv(groups_file)
     assert set(saved["group_name"]) == {"group_a", "group_b"}
 
-    # Sanity check: total_shap_importance for a group equals the sum of its
-    # members' shap_importance in the per-feature results.
-    shap_by_feature = dict(
-        zip(results["feature_name"], results["shap_importance"], strict=True)
+    # Sanity check: the main results table's group_a row and the separate
+    # group_summary's total_shap_importance agree -- both are sums of the
+    # same underlying per-member SHAP values, computed independently.
+    summary_row = summary[summary["group_name"] == "group_a"].iloc[0]
+    assert group_a_row["shap_importance"] == pytest.approx(
+        summary_row["total_shap_importance"]
     )
-    group_a_row = summary[summary["group_name"] == "group_a"].iloc[0]
-    expected_total = shap_by_feature["feature_0"] + shap_by_feature["feature_1"]
-    assert group_a_row["total_shap_importance"] == pytest.approx(expected_total)
 
 
 def test_group_by_prefix_auto_derivation(regression_csv, tmp_path):
@@ -175,7 +195,17 @@ def test_group_by_prefix_auto_derivation(regression_csv, tmp_path):
     config = make_fast_config(str(renamed_path), "regression", tmp_path)
     config.group_by_prefix = True
     pipeline = FeatureSelectionPipeline(config)
-    pipeline.run()
+    results = pipeline.run()
+
+    assert "price" in set(results["feature_name"])
+    for raw_feature in ("price_min", "price_max", "price_avg"):
+        assert raw_feature not in set(results["feature_name"])
+    price_results_row = results[results["feature_name"] == "price"].iloc[0]
+    assert set(price_results_row["feature_group_members"].split(", ")) == {
+        "price_min",
+        "price_max",
+        "price_avg",
+    }
 
     assert pipeline.group_summary is not None
     summary = pipeline.group_summary
@@ -202,6 +232,110 @@ def test_group_by_prefix_ignored_when_no_underscore(tmp_path, binary_data):
     pipeline = FeatureSelectionPipeline(config)
     pipeline.run()
     assert pipeline.group_summary is None
+
+
+def test_feature_groups_rejects_empty_group():
+    with pytest.raises(ConfigError, match="must not be empty"):
+        Config(
+            input_file="x.csv",
+            target_column="y",
+            task="binary",
+            feature_groups={"empty_group": []},
+        )
+
+
+def test_feature_groups_rejects_column_in_two_groups():
+    with pytest.raises(ConfigError, match="shares column"):
+        Config(
+            input_file="x.csv",
+            target_column="y",
+            task="binary",
+            feature_groups={
+                "group_a": ["f0", "f1"],
+                "group_b": ["f1", "f2"],
+            },
+        )
+
+
+def test_feature_groups_rejects_unknown_column_at_run_time(binary_csv, tmp_path):
+    """Column existence can't be checked at Config construction (the input
+    file hasn't been parsed yet), so it's deferred to pipeline run time."""
+    config = make_fast_config(binary_csv, "binary", tmp_path)
+    config.feature_groups = {"bad_group": ["not_a_real_column"]}
+    pipeline = FeatureSelectionPipeline(config)
+    with pytest.raises(ConfigError, match="not_a_real_column"):
+        pipeline.run()
+
+
+def _make_embedding_like_dataset(tmp_path):
+    """10 correlated 'embedding' columns (all derived from one real signal,
+    the way flattened transformer/embedding dimensions correlate with each
+    other) plus 5 independent noise columns, mirroring the motivating
+    use case for Config.feature_groups."""
+    rng = np.random.default_rng(0)
+    n = 600
+    target = rng.integers(0, 2, size=n)
+    base_signal = target * 3.0 + rng.normal(scale=0.5, size=n)
+    data = {
+        f"embed_{i}": base_signal + rng.normal(scale=0.1, size=n) for i in range(10)
+    }
+    data.update({f"noise_{i}": rng.normal(size=n) for i in range(5)})
+    data["target"] = target
+    df = pd.DataFrame(data)
+    path = tmp_path / "embedding_like.csv"
+    df.to_csv(path, index=False)
+    return str(path)
+
+
+def test_feature_groups_group_gets_aggregate_verdict_ungrouped_unaffected(tmp_path):
+    """The group (genuinely predictive, since every member is derived from
+    the same real signal) gets one aggregate row and is not spuriously
+    Dropped; the 5 independent noise columns' own SHAP/permutation
+    importance and recommendation are byte-identical whether or not
+    feature_groups is set -- grouping must not perturb ungrouped features'
+    own computation."""
+    csv_path = _make_embedding_like_dataset(tmp_path)
+    embed_cols = [f"embed_{i}" for i in range(10)]
+    noise_cols = [f"noise_{i}" for i in range(5)]
+
+    ungrouped_config = make_fast_config(
+        csv_path,
+        "binary",
+        tmp_path,
+        skip_tuning=True,
+        output_file=str(tmp_path / "ungrouped.csv"),
+    )
+    ungrouped_results = FeatureSelectionPipeline(ungrouped_config).run()
+
+    grouped_config = make_fast_config(
+        csv_path,
+        "binary",
+        tmp_path,
+        skip_tuning=True,
+        output_file=str(tmp_path / "grouped.csv"),
+        feature_groups={"embedding": embed_cols},
+    )
+    grouped_results = FeatureSelectionPipeline(grouped_config).run()
+
+    assert "embedding" in set(grouped_results["feature_name"])
+    for col in embed_cols:
+        assert col not in set(grouped_results["feature_name"])
+    embedding_mask = grouped_results["feature_name"] == "embedding"
+    embedding_row = grouped_results[embedding_mask].iloc[0]
+    assert embedding_row["recommendation"] != "Drop"
+
+    ungrouped_by_name = ungrouped_results.set_index("feature_name")
+    grouped_by_name = grouped_results.set_index("feature_name")
+    for col in noise_cols:
+        pd.testing.assert_series_equal(
+            ungrouped_by_name.loc[
+                col, ["shap_importance", "permutation_importance", "recommendation"]
+            ],
+            grouped_by_name.loc[
+                col, ["shap_importance", "permutation_importance", "recommendation"]
+            ],
+            check_names=False,
+        )
 
 
 def test_pipeline_no_bootstrap_by_default(binary_csv, tmp_path):
