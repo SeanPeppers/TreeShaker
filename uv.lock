@@ -3385,7 +3385,7 @@ requires-dist = [
     { name = "furo", marker = "extra == 'docs'", specifier = ">=2025.12.19" },
     { name = "gradio", marker = "extra == 'demo'", specifier = ">=6.19.0" },
     { name = "lightgbm", marker = "extra == 'lightgbm'", specifier = ">=4.6.0" },
-    { name = "lxml", marker = "extra == 'mcp'", specifier = ">=4.9.0" },
+    { name = "lxml", marker = "extra == 'mcp'", specifier = ">=6.1.1" },
     { name = "matplotlib", specifier = ">=3.7.0" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.28.1" },
     { name = "mlflow", marker = "extra == 'mlflow'", specifier = ">=2.0.0" },
