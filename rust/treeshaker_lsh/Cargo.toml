@@ -10,11 +10,20 @@ name = "treeshaker_lsh"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.29", features = ["extension-module"] }
+# `extension-module` is intentionally not enabled here: it skips linking
+# libpython, which is right for the `.so` maturin builds (Python resolves
+# those symbols at dlopen time) but breaks `cargo test`, a standalone
+# binary that needs them resolved at link time. maturin enables it via
+# `--features pyo3/extension-module` (see pyproject.toml's
+# [tool.maturin] `features`), so release builds are unaffected.
+pyo3 = { version = "0.29" }
 numpy = "0.29"
 rand = "0.10"
 rand_chacha = "0.10"
 rand_distr = "0.6"
+
+[dev-dependencies]
+pyo3 = { version = "0.29", features = ["auto-initialize"] }
 
 [profile.release]
 lto = true

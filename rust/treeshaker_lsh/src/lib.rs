@@ -24,6 +24,7 @@
 //! near-duplicate the exact path would find.
 
 use numpy::{PyReadonlyArray1, PyReadonlyArray2};
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -77,6 +78,18 @@ fn pearson_corr(a: &[f64], b: &[f64]) -> Option<f64> {
     Some(cov / (var_a.sqrt() * var_b.sqrt()))
 }
 
+/// Signatures are packed into a `u64`, so `num_hashes` must be in `1..=64`
+/// -- otherwise the bit shift in `simhash_signature` would overflow.
+fn check_num_hashes(num_hashes: usize) -> PyResult<()> {
+    if num_hashes == 0 || num_hashes > 64 {
+        return Err(PyValueError::new_err(format!(
+            "num_hashes must be between 1 and 64 (got {num_hashes}); \
+             signatures are packed into a u64"
+        )));
+    }
+    Ok(())
+}
+
 /// Screen a wide feature matrix for candidate near-duplicate / highly
 /// correlated feature pairs using SimHash LSH, in near-linear time in
 /// the number of features.
@@ -108,6 +121,7 @@ fn simhash_screen(
     num_hashes: usize,
     seed: u64,
 ) -> PyResult<Vec<(usize, usize, f64)>> {
+    check_num_hashes(num_hashes)?;
     let arr = features.as_array();
     let n_features = arr.shape()[0];
     let n_rows = arr.shape()[1];
@@ -178,6 +192,7 @@ fn simhash_signature_py(
     num_hashes: usize,
     seed: u64,
 ) -> PyResult<u64> {
+    check_num_hashes(num_hashes)?;
     let arr = column.as_array();
     let n_rows = arr.len();
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
@@ -222,5 +237,13 @@ mod tests {
         let a = vec![1.0, 2.0, 3.0];
         let b = vec![1.0, 2.0, 3.0];
         assert_eq!(simhash_signature(&a, &hyperplanes), simhash_signature(&b, &hyperplanes));
+    }
+
+    #[test]
+    fn check_num_hashes_rejects_out_of_range() {
+        assert!(check_num_hashes(0).is_err());
+        assert!(check_num_hashes(65).is_err());
+        assert!(check_num_hashes(1).is_ok());
+        assert!(check_num_hashes(64).is_ok());
     }
 }

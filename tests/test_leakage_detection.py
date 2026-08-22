@@ -533,8 +533,11 @@ def test_near_duplicate_exact_mode():
 
 
 def test_near_duplicate_approximate_mode_fallback_without_rust():
-    """Test that approximate mode gracefully falls back to exact when
-    Rust extension is unavailable."""
+    """Test that approximate mode gracefully falls back to exact when the
+    Rust extension is unavailable, and detects the same near-duplicate
+    pair as when it is available."""
+    import treeshaker.leakage_detection as leakage_detection
+
     base = np.random.default_rng(42).normal(0, 1, 200)
     df = pd.DataFrame(
         {
@@ -543,36 +546,65 @@ def test_near_duplicate_approximate_mode_fallback_without_rust():
             "target": np.random.default_rng(1).integers(0, 2, 200).astype(float),
         }
     )
-    # If the extension is available, this will use it; if not, it falls
-    # back to exact and logs a warning. Both paths should detect the pair.
     detector = LeakageDetector(
         LeakageConfig(near_duplicate_corr_threshold=0.98),
         screening_mode="approximate",
     )
     shap = np.array([0.4, 0.4])
-    warnings = detector.detect(df, "target", ["feat_a", "feat_b"], shap)
-    flagged = [k for k, v in warnings.items() if v]
-    assert len(flagged) > 0
+
+    # Force the fallback branch regardless of whether the compiled
+    # extension is actually installed in this environment, so this test
+    # exercises what its name promises rather than whichever path happens
+    # to be available.
+    original_available = leakage_detection._LSH_AVAILABLE
+    leakage_detection._LSH_AVAILABLE = False
+    try:
+        warnings_fallback = detector.detect(
+            df, "target", ["feat_a", "feat_b"], shap
+        )
+    finally:
+        leakage_detection._LSH_AVAILABLE = original_available
+
+    assert any(
+        "Nearly identical" in msg and "feat_b" in msg
+        for msg in warnings_fallback["feat_a"]
+    ), warnings_fallback["feat_a"]
+
+    # And, whichever path is actually active by default (Rust extension if
+    # compiled and importable, exact fallback otherwise), it should detect
+    # the same pair.
+    warnings_default = detector.detect(df, "target", ["feat_a", "feat_b"], shap)
+    assert any(
+        "Nearly identical" in msg and "feat_b" in msg
+        for msg in warnings_default["feat_a"]
+    ), warnings_default["feat_a"]
 
 
 def test_near_duplicate_approximate_mode_matches_exact():
-    """Test that approximate mode results are consistent with exact mode
-    on a moderately-sized dataset (if Rust extension is available)."""
-    base = np.random.default_rng(42).normal(0, 1, 150)
+    """Test that approximate mode results match exact mode's on a
+    moderately-sized dataset with unambiguous near-duplicate pairs, when
+    the compiled Rust extension is available."""
+    import treeshaker.leakage_detection as leakage_detection
+
+    if not leakage_detection._LSH_AVAILABLE:
+        pytest.skip("treeshaker_lsh extension not installed")
+
+    base_a = np.random.default_rng(42).normal(0, 1, 150)
     rng = np.random.default_rng(99)
+    base_b = rng.normal(5, 2, 150)
+    base_c = rng.normal(-1, 3, 150)
     # Create 10 features: 3 pairs of near-duplicates (high correlation) and 4
-    # independent
+    # independent. Each "duplicate" reuses its pair's base array (scaled
+    # plus a little noise) so it is actually correlated with it -- drawing
+    # a fresh rng.normal(...) here instead would silently make it just
+    # another independent feature.
     features = {
-        "dup_a1": base,
-        "dup_a2": base * 0.99999 + rng.normal(0, 0.001, 150),  # Very high correlation
-        "dup_b1": rng.normal(5, 2, 150),
-        "dup_b2": (
-            rng.normal(5, 2, 150) * 0.99998 + rng.normal(0, 0.002, 150)
-        ),  # Very high corr
-        "dup_c1": rng.normal(-1, 3, 150),
-        "dup_c2": (
-            rng.normal(-1, 3, 150) * 0.99997 + rng.normal(0, 0.003, 150)
-        ),  # Very high corr
+        "dup_a1": base_a,
+        "dup_a2": base_a * 0.99999 + rng.normal(0, 0.001, 150),  # Very high correlation
+        "dup_b1": base_b,
+        "dup_b2": base_b * 0.99998 + rng.normal(0, 0.002, 150),  # Very high corr
+        "dup_c1": base_c,
+        "dup_c2": base_c * 0.99997 + rng.normal(0, 0.003, 150),  # Very high corr
         "indep_1": rng.normal(0, 1, 150),
         "indep_2": rng.normal(0, 1, 150),
         "indep_3": rng.normal(0, 1, 150),
@@ -595,16 +627,29 @@ def test_near_duplicate_approximate_mode_matches_exact():
     warnings_exact = detector_exact.detect(df, "target", feature_names, shap)
     warnings_approx = detector_approx.detect(df, "target", feature_names, shap)
 
-    # Both should flag the same pairs (allowing for LSH approximation,
-    # both should find at least most near-duplicate pairs).
-    flagged_exact = {k for k, v in warnings_exact.items() if v}
-    flagged_approx = {k for k, v in warnings_approx.items() if v}
+    # `detect()` also runs other checks (e.g. VIF-based multicollinearity)
+    # that fire on these same near-duplicate columns for unrelated reasons,
+    # so filter down to near-duplicate-specific messages to isolate what
+    # `screening_mode` actually controls.
+    def near_dup_flagged(warnings: dict[str, list[str]]) -> set[str]:
+        return {
+            name
+            for name, msgs in warnings.items()
+            if any("Nearly identical" in m for m in msgs)
+        }
 
-    # The approximate path may miss some due to hash collisions, but
-    # should catch the same pairs or at least most of them.
-    # Allow some tolerance since LSH is approximate.
-    assert len(flagged_exact) >= 2  # At least some dup pairs
-    assert len(flagged_approx) >= 1  # Approximate should catch some
+    flagged_exact = near_dup_flagged(warnings_exact)
+    flagged_approx = near_dup_flagged(warnings_approx)
+
+    # With these deliberately unambiguous near-duplicate pairs (r > 0.999)
+    # and no other correlated features, the exact path must find all 3
+    # pairs (one flag per pair -- see `_check_near_duplicates_exact`,
+    # which only records the lower-indexed name of each pair), and the
+    # Rust LSH path -- with 24 hyperplanes over only 10 features,
+    # collisions between these very-high-correlation pairs are essentially
+    # certain -- must find exactly the same 3.
+    assert flagged_exact == {"dup_a1", "dup_b1", "dup_c1"}
+    assert flagged_approx == flagged_exact
 
 
 def test_detect_lookahead_leakage_clean_data_no_warnings():
