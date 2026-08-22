@@ -161,7 +161,9 @@ def test_config_raises_on_invalid_method():
         )
 
 
-def _make_gating_pipeline(collinearity_threshold: float = 0.9) -> FeatureSelectionPipeline:
+def _make_gating_pipeline(
+    collinearity_threshold: float = 0.9,
+) -> FeatureSelectionPipeline:
     """A pipeline instance with train_data/feature_names set directly, so
     _apply_collinearity_gating can be tested as a pure function without
     running the full pipeline (deterministic -- no dependence on how XGBoost
@@ -178,7 +180,8 @@ def _make_gating_pipeline(collinearity_threshold: float = 0.9) -> FeatureSelecti
     base = rng.normal(size=100)
     pipeline.train_data = pd.DataFrame(
         {
-            "redundant": base + rng.normal(scale=0.001, size=100),  # ~collinear with kept
+            # ~collinear with kept
+            "redundant": base + rng.normal(scale=0.001, size=100),
             "kept": base,
             "unrelated": rng.normal(size=100),
             "target": rng.integers(0, 2, size=100),
