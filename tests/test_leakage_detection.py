@@ -559,9 +559,7 @@ def test_near_duplicate_approximate_mode_fallback_without_rust():
     original_available = leakage_detection._LSH_AVAILABLE
     leakage_detection._LSH_AVAILABLE = False
     try:
-        warnings_fallback = detector.detect(
-            df, "target", ["feat_a", "feat_b"], shap
-        )
+        warnings_fallback = detector.detect(df, "target", ["feat_a", "feat_b"], shap)
     finally:
         leakage_detection._LSH_AVAILABLE = original_available
 
