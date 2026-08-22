@@ -555,6 +555,18 @@ class Config:
             self.synthetic_config.interaction_top_n,
             1,
         )
+        if (
+            self.synthetic_config.synthesize_from_interactions
+            and not self.compute_shap_interactions
+        ):
+            # synthesize_from_interactions requires SHAP interaction values
+            # to exist -- see pipeline.run(). Auto-fix here rather than
+            # silently no-op'ing (the old behavior: pipeline.run() would
+            # warn and skip synthesis), so every caller -- CLI, MCP, direct
+            # Config construction -- gets the same "do what was asked"
+            # behavior instead of only the MCP tool wrapper having its own
+            # copy of this fix.
+            self.compute_shap_interactions = True
         if self.train_test_importance_delta_threshold is not None:
             _require_at_least(
                 "train_test_importance_delta_threshold",
