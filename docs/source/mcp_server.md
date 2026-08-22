@@ -81,7 +81,7 @@ Run the full feature selection pipeline end to end.
 | `n_permutations` | integer | No | `5` | Number of shuffles per feature |
 | `permutation_metric` | string | No | `null` | Override metric (e.g., `roc_auc`, `accuracy`, `neg_mse`, `wape`) |
 | `shap_sample_size` | integer | No | `null` | Cap SHAP to N rows (useful for large datasets) |
-| `group_by_prefix` | boolean | No | `false` | Auto-derive feature groups from prefix |
+| `group_by_prefix` | boolean | No | `false` | Auto-derive feature groups from prefix; each group's members are collapsed into one aggregate Keep/Caution/Drop row in the main results (see `feature_groups` below and [config_reference.md](config_reference.md#feature-groups)) |
 | `use_boruta` | boolean | No | `false` | Run Boruta feature selection and add `boruta_decision` column |
 | `use_rfecv` | boolean | No | `false` | Run sklearn RFECV feature selection and add `rfecv_ranking` column |
 | `use_lightgbm` | boolean | No | `false` | Compute LightGBM feature importances as `lightgbm_importance` column |
@@ -222,6 +222,16 @@ treeshaker --input data.csv --target price --task regression \
 ```
 
 Valid keys are any field name in the `Config` dataclass. Invalid keys raise a `ValueError`.
+
+Explicit `feature_groups` (as opposed to auto-derived `group_by_prefix`) is
+one such field, reachable this way rather than as its own top-level
+`run_pipeline` kwarg:
+
+```python
+config_overrides={
+    "feature_groups": {"title_embedding": ["embedding_0", "embedding_1"]},
+}
+```
 
 ## Error handling
 

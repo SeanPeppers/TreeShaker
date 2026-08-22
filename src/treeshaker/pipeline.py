@@ -10,8 +10,10 @@ import pandas as pd
 
 from .config import Config
 from .dtype_handling import prepare_feature_dtypes_splits
+from .exceptions import ConfigError
 from .harm_detection import HarmDetector
 from .importance import (
+    compute_group_permutation_importance,
     compute_importance_divergence,
     compute_mutual_information,
     compute_permutation_importance,
@@ -1199,6 +1201,170 @@ class FeatureSelectionPipeline:
             )
         return results
 
+    def _apply_feature_grouping(
+        self,
+        results: pd.DataFrame,
+        groups: dict[str, list[str]],
+        metric_fn: Any,
+        test_eval: pd.DataFrame,
+        leakage_warnings: dict[str, list[str]],
+        temporal_structure_warnings: dict[str, list[str]],
+        lookahead_warnings: dict[str, list[str]],
+    ) -> pd.DataFrame:
+        """
+        Collapse each group's member rows in `results` into one aggregate
+        group row with its own Keep/Caution/Drop verdict.
+
+        Group SHAP importance is the sum of member SHAP importances (SHAP
+        values are additive by construction, so no new SHAP call is
+        needed). Group permutation importance is a genuine new computation
+        (compute_group_permutation_importance) -- shuffling each member
+        independently would understate the cost of removing the whole
+        group, since correlated members can substitute for each other.
+
+        A leakage/temporal/lookahead warning on a member that merely names
+        another member of the *same* group (e.g. a near-duplicate match
+        between two embedding dimensions) is dropped as expected and
+        uninteresting; warnings naming anything else still surface on the
+        group row. VIF-based multicollinearity warnings don't name a
+        specific counterpart column, so they aren't filtered this way --
+        ponytail: a known false-positive source for grouped columns
+        (regressing an embedding dimension on "all other features"
+        includes its own group siblings); exclude same-group members from
+        the VIF regressor set in leakage_detection.py if this proves noisy
+        in practice.
+
+        Args:
+            results: The per-column results DataFrame, fully built (all
+                per-column adjustments -- harm detection, leakage,
+                collinearity, stability, shadow probes -- already applied).
+            groups: Group name -> member column names (already validated to
+                exist in self.feature_names by the caller).
+            metric_fn: The scoring function used for permutation importance
+                this run (same one compute_permutation_importance used).
+            test_eval: The same held-out evaluation frame used for the
+                per-column SHAP/permutation importance computation above.
+            leakage_warnings, temporal_structure_warnings,
+                lookahead_warnings: The same per-column warning dicts
+                computed earlier in run(), before any per-column reasons
+                were flattened into the results table's "reason" column.
+
+        Returns:
+            `results` with every grouped member row replaced by one row per
+            group; ungrouped rows are untouched.
+        """
+        member_to_group: dict[str, str] = {}
+        for group_name, members in groups.items():
+            for member in members:
+                member_to_group[member] = group_name
+
+        group_perm, group_perm_std = compute_group_permutation_importance(
+            model=self.model,
+            data=test_eval,
+            target_column=self.config.target_column,
+            feature_names=self.feature_names,
+            feature_groups=groups,
+            metric_fn=metric_fn,
+            use_predict_proba=(self.config.task == "binary"),
+            n_repeats=self.config.n_permutations,
+        )
+        detector = HarmDetector(
+            shap_importance_threshold=self.config.shap_importance_threshold,
+            perm_importance_threshold=self.config.permutation_importance_threshold,
+        )
+
+        def _external_only(
+            warns: list[str], member: str, group_members: list[str]
+        ) -> list[str]:
+            """Drop a warning naming another member of the same group (e.g.
+            a near-duplicate match between two embedding dimensions is
+            expected/uninteresting); keep anything else."""
+            return [
+                w
+                for w in warns
+                if not any(
+                    f"'{other}'" in w for other in group_members if other != member
+                )
+            ]
+
+        new_rows: list[dict[str, Any]] = []
+        for group_idx, (group_name, members) in enumerate(groups.items()):
+            member_rows = results[results["feature_name"].isin(members)]
+            group_shap = float(member_rows["shap_importance"].sum())
+            group_mi = float(member_rows["mutual_info_score"].sum())
+
+            is_harmful, harm_reasons = detector.flag_harmful_features(
+                shap_importance=np.array([group_shap]),
+                perm_importance=np.array([group_perm[group_idx]]),
+                severe_class_imbalance=self.severe_class_imbalance,
+            )
+
+            external_warnings: list[str] = []
+            for member in members:
+                external_warnings.extend(
+                    _external_only(leakage_warnings.get(member, []), member, members)
+                )
+                external_warnings.extend(
+                    _external_only(
+                        temporal_structure_warnings.get(member, []), member, members
+                    )
+                )
+                external_warnings.extend(
+                    _external_only(lookahead_warnings.get(member, []), member, members)
+                )
+            seen: set[str] = set()
+            deduped_warnings: list[str] = []
+            for w in external_warnings:
+                if w not in seen:
+                    seen.add(w)
+                    deduped_warnings.append(w)
+            external_warnings = deduped_warnings
+
+            if is_harmful[0] and external_warnings:
+                recommendation = "Drop"
+                all_reasons = [harm_reasons[0], *external_warnings]
+                numbered = " ".join(
+                    f"({j}) {r}" for j, r in enumerate(all_reasons, start=1)
+                )
+                reason = f"{len(all_reasons)} issues found — " + numbered
+            elif is_harmful[0]:
+                recommendation = "Drop"
+                reason = harm_reasons[0]
+            elif external_warnings:
+                recommendation = "Caution"
+                if len(external_warnings) > 1:
+                    numbered = " ".join(
+                        f"({j}) {r}" for j, r in enumerate(external_warnings, start=1)
+                    )
+                    reason = f"{len(external_warnings)} issues found — " + numbered
+                else:
+                    reason = external_warnings[0]
+            else:
+                recommendation = "Keep"
+                reason = ""
+
+            new_rows.append(
+                {
+                    "feature_name": group_name,
+                    "shap_importance": group_shap,
+                    "permutation_importance": float(group_perm[group_idx]),
+                    "permutation_importance_std": float(group_perm_std[group_idx]),
+                    "mutual_info_score": group_mi,
+                    "recommendation": recommendation,
+                    "reason": reason,
+                    "feature_group_members": ", ".join(members),
+                }
+            )
+
+        grouped_members = set(member_to_group)
+        results = results[~results["feature_name"].isin(grouped_members)].reset_index(
+            drop=True
+        )
+        results = pd.concat([results, pd.DataFrame(new_rows)], ignore_index=True)
+        return results.sort_values("shap_importance", ascending=False).reset_index(
+            drop=True
+        )
+
     def run(self) -> pd.DataFrame:
         """
         Execute the full feature selection pipeline.
@@ -1838,6 +2004,38 @@ class FeatureSelectionPipeline:
             self.feature_names = [self.feature_names[i] for i in real_indices]
             shap_importance = shap_importance[real_indices]
 
+        groups = self.config.feature_groups
+        if not groups and self.config.group_by_prefix:
+            groups = derive_prefix_groups(self.feature_names)
+
+        if groups:
+            unknown = {
+                col
+                for members in groups.values()
+                for col in members
+                if col not in self.feature_names
+            }
+            if unknown:
+                raise ConfigError(
+                    f"feature_groups references column(s) {sorted(unknown)}"
+                    " not present among this dataset's feature columns."
+                )
+            # Collapses each group's member rows in the main results table
+            # into one aggregate group row (see _apply_feature_grouping's
+            # docstring) -- runs after every per-column adjustment above
+            # (harm detection, leakage, collinearity, stability, shadow
+            # probes) has already settled the per-column verdicts it
+            # aggregates from.
+            self.results = self._apply_feature_grouping(
+                self.results,
+                groups,
+                metric_fn,
+                test_eval,
+                leakage_warnings,
+                temporal_structure_warnings,
+                lookahead_warnings,
+            )
+
         save_results(
             results=self.results,
             output_file=self.config.output_file,
@@ -1847,10 +2045,6 @@ class FeatureSelectionPipeline:
         # Shared by every "<output_stem>_<suffix>.csv" derived-output path
         # below (group summary, SHAP interactions, synthetic suggestions).
         stem = derive_output_stem(self.config.output_file)
-
-        groups = self.config.feature_groups
-        if not groups and self.config.group_by_prefix:
-            groups = derive_prefix_groups(self.feature_names)
 
         if groups:
             group_summary = build_group_summary(
@@ -1879,16 +2073,29 @@ class FeatureSelectionPipeline:
                 data=train_val_data,
                 feature_names=full_feature_names,
             )
+            if self.interactions is None:
+                self.logger.warning(
+                    "compute_shap_interactions=True was set, but SHAP"
+                    " interaction values are unavailable for this model"
+                    " (non-tree custom_model) -- skipping interactions"
+                    " output and any synthesize_from_interactions synthesis."
+                )
             if self.interactions is not None and self._effective_n_shadow_probes > 0:
                 self.interactions = self.interactions[
                     ~self.interactions["feature_a"].str.startswith("__shadow_probe_")
                     & ~self.interactions["feature_b"].str.startswith("__shadow_probe_")
                 ].reset_index(drop=True)
-            interactions_file = f"{stem}_interactions.csv"
-            self.interactions.to_csv(interactions_file, index=False)
-            self.logger.info(f"SHAP interaction values saved to {interactions_file}")
+            if self.interactions is not None:
+                interactions_file = f"{stem}_interactions.csv"
+                self.interactions.to_csv(interactions_file, index=False)
+                self.logger.info(
+                    f"SHAP interaction values saved to {interactions_file}"
+                )
 
-            if self.config.synthetic_config.synthesize_from_interactions:
+            if (
+                self.interactions is not None
+                and self.config.synthetic_config.synthesize_from_interactions
+            ):
                 self.suggested_features = suggest_synthetic_features(
                     data=train_val_data,
                     target_column=self.config.target_column,

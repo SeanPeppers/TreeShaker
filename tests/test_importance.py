@@ -12,6 +12,7 @@ from sklearn.metrics import roc_auc_score
 
 from treeshaker.config import Config
 from treeshaker.importance import (
+    compute_group_permutation_importance,
     compute_importance_divergence,
     compute_mutual_information,
     compute_permutation_importance,
@@ -292,6 +293,67 @@ def test_permutation_importance_parallel_uses_loky_backend(fitted_binary_model):
     assert captured_kwargs.get("backend") == "loky"
 
 
+def test_group_permutation_importance_shape(fitted_binary_model):
+    model, df, feature_names = fitted_binary_model
+    metric_fn = get_metric_fn("binary")
+    groups = {"group_a": feature_names[:3], "group_b": feature_names[3:5]}
+    importance, importance_std = compute_group_permutation_importance(
+        model, df, "target", feature_names, groups, metric_fn, use_predict_proba=True
+    )
+    assert importance.shape == (2,)
+    assert importance_std.shape == (2,)
+    assert (importance_std >= 0).all()
+
+
+def test_group_permutation_importance_shuffles_members_together(
+    fitted_binary_model,
+):
+    """Shuffling a group's members together must not equal the sum of
+    shuffling them independently -- correlated columns can substitute for
+    each other under independent shuffling, understating what removing the
+    whole group actually costs. Construct two duplicate (perfectly
+    correlated) columns as one group: shuffling them together should drop
+    performance much more than shuffling either alone, since the model
+    can't reconstruct the group's signal from an unshuffled duplicate."""
+    X, y = make_classification(
+        n_samples=200, n_features=4, n_informative=2, random_state=0
+    )
+    df = pd.DataFrame(X, columns=["a", "b", "c", "d"])
+    df["dup_a"] = df["a"]  # exact duplicate of an informative column
+    df["target"] = y
+    feature_names = ["a", "b", "c", "d", "dup_a"]
+    # colsample_bytree < 1 so different boosting rounds randomly see only
+    # one of the two duplicate columns -- with colsample_bytree=1.0, a tree
+    # model typically leans on just one of two perfectly correlated columns
+    # and never splits on the other at all, which would make shuffling the
+    # unused one a no-op and defeat this test's premise.
+    model = xgb.XGBClassifier(
+        n_estimators=50, colsample_bytree=0.5, random_state=42, verbosity=0
+    )
+    model.fit(df[feature_names], df["target"])
+    metric_fn = get_metric_fn("binary")
+
+    single_importance, _ = compute_permutation_importance(
+        model, df, "target", feature_names, metric_fn, use_predict_proba=True
+    )
+    group_importance, _ = compute_group_permutation_importance(
+        model,
+        df,
+        "target",
+        feature_names,
+        {"a_group": ["a", "dup_a"]},
+        metric_fn,
+        use_predict_proba=True,
+    )
+    a_index = feature_names.index("a")
+    dup_index = feature_names.index("dup_a")
+    # Shuffling "a" or "dup_a" alone barely hurts (the other still carries
+    # the signal); shuffling both together should hurt noticeably more.
+    assert group_importance[0] > max(
+        single_importance[a_index], single_importance[dup_index]
+    )
+
+
 def test_permutation_importance_binary_uses_predict_proba(fitted_binary_model):
     """Binary permutation importance must score against predicted
     probabilities, not hard class labels, since roc_auc_score expects
@@ -370,6 +432,18 @@ def test_shap_interactions_regression(fitted_regression_model):
     interactions = compute_shap_interactions(model, df, feature_names, top_n=5)
     assert len(interactions) <= 5
     assert (interactions["interaction_strength"] >= 0).all()
+
+
+def test_shap_interactions_returns_none_for_non_tree_model(fitted_binary_model):
+    """A non-tree model (TreeExplainer's target) must return None instead
+    of crashing -- unlike compute_shap_importance, there's no
+    model-agnostic fallback for interaction values."""
+    from sklearn.linear_model import LogisticRegression
+
+    _, df, feature_names = fitted_binary_model
+    model = LogisticRegression(max_iter=200)
+    model.fit(df[feature_names], df["target"])
+    assert compute_shap_interactions(model, df, feature_names) is None
 
 
 def test_permutation_importance_informative_features_positive(

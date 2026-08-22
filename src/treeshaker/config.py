@@ -193,7 +193,36 @@ class Config:
     compute_shap_interactions: bool = False
     leakage_config: LeakageConfig = field(default_factory=LeakageConfig)
     feature_groups: dict[str, list[str]] | None = None
+    """Optional mapping of group name -> member column names, for treating a
+    block of related columns (e.g. a 768-dim embedding flattened into
+    embedding_0..embedding_767) as one unit. Previously used only to build
+    the informational `<output_stem>_groups.csv` SHAP-sum summary
+    (`build_group_summary` in pipeline.py); now also collapses each group's
+    member rows in the main results table into one aggregate group row with
+    its own Keep/Caution/Drop verdict, computed from:
+    - Group SHAP importance: sum of member SHAP importances (already
+      computed per column, no extra SHAP call -- SHAP values are additive
+      by construction).
+    - Group permutation importance: a genuine new computation
+      (`compute_group_permutation_importance` in importance.py) that
+      shuffles every member column together, since shuffling correlated
+      embedding dimensions independently understates what removing the
+      whole group actually costs.
+    - Leakage/temporal warnings that merely reference another member of the
+      *same* group (e.g. a near-duplicate match between two embedding
+      dimensions) are dropped as expected/uninteresting; warnings referencing
+      something outside the group still surface on the group row.
+
+    Ungrouped columns keep their existing individual rows and behavior,
+    unaffected. Every member column must exist among the dataset's feature
+    columns -- validated at pipeline run time (not here, since Config
+    construction doesn't parse the input file), raising ConfigError
+    otherwise. None (default, unchanged) means no grouping."""
     group_by_prefix: bool = False
+    """If True and feature_groups is not set, auto-derive groups from each
+    feature's name prefix before the last underscore (see
+    derive_prefix_groups in pipeline.py) and apply the same main-results
+    group collapsing described above to them."""
     bootstrap_config: BootstrapConfig = field(default_factory=BootstrapConfig)
     """Configuration for bootstrap ensemble importance stability analysis,
     including the optional stability threshold to gate recommendations on
@@ -612,3 +641,18 @@ class Config:
             raise ConfigError("collinearity_threshold must be between 0.0 and 1.0")
         if self.collinearity_method not in ("spearman", "pearson"):
             raise ConfigError("collinearity_method must be 'spearman' or 'pearson'")
+        if self.feature_groups is not None:
+            seen: set[str] = set()
+            for group_name, members in self.feature_groups.items():
+                if not members:
+                    raise ConfigError(
+                        f"feature_groups[{group_name!r}] must not be empty."
+                    )
+                overlap = seen & set(members)
+                if overlap:
+                    raise ConfigError(
+                        f"feature_groups[{group_name!r}] shares column(s)"
+                        f" {sorted(overlap)} with another group -- a column"
+                        " may only belong to one group."
+                    )
+                seen.update(members)
