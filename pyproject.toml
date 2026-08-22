@@ -21,47 +21,47 @@ classifiers = [
 ]
 dependencies = [
 
-    "shap>=0.52.0",
-    "xgboost>=3.3.0",
-    "optuna>=4.9.0",
+    "shap>=0.52.0,<1.0.0",
+    "xgboost>=3.3.0,<4",
+    "optuna>=4.9.0,<5",
     "pandas>=2.0.0,<3.0.0",
-    "scikit-learn>=1.9.0",
+    "scikit-learn>=1.9.0,<2",
     "numpy>=1.24.0",
-    "matplotlib>=3.11.0",
+    "matplotlib>=3.11.0,<4",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "ruff>=0.15.20",
-    "pytest>=9.1.1",
-    "pytest-cov>=7.1.0",
-    "mypy>=1.8.0",
+    "ruff>=0.15.20,<1.0.0",
+    "pytest>=9.1.1,<10",
+    "pytest-cov>=7.1.0,<8",
+    "mypy>=1.8.0,<3",
 ]
 demo = [
-    "gradio>=6.19.0",
+    "gradio>=6.19.0,<7",
 ]
 mcp = [
     "mcp>=1.28.1,<2",
-    "lxml>=6.1.1",
+    "lxml>=6.1.1,<7",
 ]
 fast = [
     "treeshaker_lsh>=0.1.0",
 ]
 boruta = []
 lightgbm = [
-    "lightgbm>=4.6.0",
+    "lightgbm>=4.6.0,<5",
 ]
 catboost = [
-    "catboost>=1.2.0",
+    "catboost>=1.2.0,<2",
 ]
 mlflow = [
-    "mlflow>=3.14.0",
+    "mlflow>=3.14.0,<4",
 ]
 docs = [
 
-    "sphinx>=7.0.0",
+    "sphinx>=7.0.0,<10",
     "furo>=2025.12.19",
-    "myst-parser>=1.0.0",
+    "myst-parser>=1.0.0,<6",
 ]
 
 [project.scripts]
