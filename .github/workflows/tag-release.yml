@@ -1,0 +1,67 @@
+name: Tag release
+
+# Auto-tags + creates a GitHub Release whenever pyproject.toml's version
+# bumps on a push to main. No PyPI involved - this only marks a version
+# in the repo itself, so `pip install git+<repo>@vX.Y.Z` has something to
+# point at. Releases on a private repo are only visible to people who
+# already have repo access.
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  tag-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Check whether pyproject.toml's version changed in this push
+        id: version_check
+        run: |
+          before="${{ github.event.before }}"
+          if [ "$before" = "0000000000000000000000000000000000000000" ]; then
+            echo "No previous commit to diff against (new branch/history) - skipping."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          old_version=$(git show "$before:pyproject.toml" 2>/dev/null | grep -m1 '^version = ' || true)
+          new_version=$(grep -m1 '^version = ' pyproject.toml)
+
+          if [ "$old_version" = "$new_version" ]; then
+            echo "version unchanged ($new_version) - skipping."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          version=$(echo "$new_version" | sed -E 's/^version = "(.*)"$/\1/')
+          echo "version bumped: ${old_version:-<none>} -> $new_version"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Create tag + release
+        if: steps.version_check.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version_check.outputs.version }}
+        run: |
+          tag="v${VERSION}"
+          if gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "Tag ${tag} already exists - skipping (workflow re-run on same commit?)."
+            exit 0
+          fi
+          gh release create "$tag" \
+            --target "${{ github.sha }}" \
+            --title "$tag" \
+            --generate-notes

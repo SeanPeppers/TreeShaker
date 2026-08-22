@@ -40,7 +40,10 @@ Most feature-importance tools give you a single number per feature from a single
 
 **CLI:**
 ```bash
-pip install treeshaker
+# Repo is private for now (not published to PyPI) - install straight from
+# GitHub with an account that has repo access. Pin to a release tag rather
+# than @main for a stable version.
+pip install git+https://github.com/SeanPeppers/TreeShaker.git@v0.1.1
 treeshaker --input data.csv --target price --task regression
 ```
 
