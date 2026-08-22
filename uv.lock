@@ -3387,7 +3387,7 @@ requires-dist = [
     { name = "lightgbm", marker = "extra == 'lightgbm'", specifier = ">=4.6.0" },
     { name = "lxml", marker = "extra == 'mcp'", specifier = ">=4.9.0" },
     { name = "matplotlib", specifier = ">=3.11.0" },
-    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.28.1" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.28.1,<2" },
     { name = "mlflow", marker = "extra == 'mlflow'", specifier = ">=2.0.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.8.0" },
     { name = "myst-parser", marker = "extra == 'docs'", specifier = ">=1.0.0" },
