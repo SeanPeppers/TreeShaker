@@ -157,3 +157,8 @@ Cargo.lock
 # Notebook-generated data artifacts (regenerated when notebooks are re-run)
 examples/*.csv
 treeshaker_results*.csv
+
+# MLflow local tracking artifacts (created if use_mlflow is exercised
+# without an explicit tracking URI, e.g. manual local testing)
+mlruns/
+mlflow.db
