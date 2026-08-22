@@ -7,7 +7,7 @@ import pandas as pd
 
 from treeshaker.cli import parse_arguments
 from treeshaker.config import Config
-from treeshaker.pipeline import run_rfecv
+from treeshaker.pipeline import FeatureSelectionPipeline, run_rfecv
 
 
 def test_use_rfecv_config_default():
@@ -57,3 +57,32 @@ def test_run_rfecv_mocked(monkeypatch):
         task="binary",
     )
     assert ranking == [1, 2, 1]
+
+
+def test_pipeline_with_rfecv(tmp_path):
+    """The use_rfecv Config flag actually reaches the pipeline's run(), not
+    just run_rfecv() in isolation -- regression guard for the call site in
+    run(), not just the underlying function."""
+    csv_path = tmp_path / "data.csv"
+    np.random.seed(42)
+    df = pd.DataFrame(
+        {
+            "feat1": np.random.randn(50),
+            "feat2": np.random.randn(50),
+            "target": np.random.choice([0, 1], size=50),
+        }
+    )
+    df.to_csv(csv_path, index=False)
+
+    config = Config(
+        input_file=str(csv_path),
+        target_column="target",
+        task="binary",
+        use_rfecv=True,
+        skip_tuning=True,
+    )
+    pipeline = FeatureSelectionPipeline(config)
+    results = pipeline.run()
+
+    assert "rfecv_ranking" in results.columns
+    assert len(results["rfecv_ranking"]) == 2

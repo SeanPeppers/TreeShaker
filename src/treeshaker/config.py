@@ -77,7 +77,9 @@ class XGBoostConfig:
     would suggest otherwise; forcing "cuda" when no GPU is actually
     usable raises ConfigError instead of silently falling back, since
     that mismatch likely means the user expected GPU acceleration they
-    aren't getting."""
+    aren't getting. Setting this to "cuda" is equivalent to the
+    top-level Config.use_gpu=True convenience flag -- same forced-CUDA,
+    error-if-unavailable behavior either way."""
     extra_params: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -284,7 +286,15 @@ class Config:
 
     use_gpu: bool = False
     """If True, configure XGBoost models to use GPU acceleration (sets
-    device to 'cuda'). Off by default."""
+    device to 'cuda'). Off by default.
+
+    Equivalent to setting xgboost_config.device="cuda" directly -- both
+    force CUDA and raise ConfigError if no usable GPU is detected, rather
+    than falling back to CPU. This field exists as a top-level convenience
+    alongside xgboost_config.device; there's no behavioral difference
+    between the two, so either works. For automatic GPU-if-available
+    detection with a silent CPU fallback instead, leave both alone --
+    xgboost_config.device="auto" (the default) already does that."""
 
     use_optuna_pruning: bool = False
     """If True, enable Optuna trial pruning and early stopping during hyperparameter
@@ -406,13 +416,6 @@ class Config:
     """Correlation method for collinearity clustering: 'spearman' or 'pearson'.
     Ignored when collinearity_threshold=0."""
 
-    use_polars: bool = False
-    """If True, use Polars instead of pandas to read the input CSV. Polars
-    parses CSV significantly faster than pandas (Rust-based, multi-threaded)
-    and uses less peak memory during the parse. The resulting DataFrame is
-    converted to pandas after loading so the rest of the pipeline is
-    unchanged. Off by default; requires ``pip install treeshaker[polars]``.
-    Compatible with ``streaming=True``."""
     n_stability_runs: int = 0
     """Number of additional pipeline runs (with different random seeds) used to
     estimate per-feature recommendation stability. 0 = disabled (default).

@@ -268,6 +268,21 @@ def run_rfecv(
     return [int(r) for r in selector.ranking_]
 
 
+def _normalize_importances(importances: Any) -> list[float]:
+    """Normalize raw feature importances to sum to 1.0.
+
+    Shared by the alternative importance backends (LightGBM, CatBoost, RF
+    baseline), all of which normalize their model's raw
+    feature_importances_ the same way. Falls back to the raw values
+    unnormalized if they sum to 0 (e.g. a model that assigned zero
+    importance to every feature).
+    """
+    total = float(sum(importances))
+    if total > 0:
+        return [float(i / total) for i in importances]
+    return [float(i) for i in importances]
+
+
 def run_lightgbm_importance(
     data: pd.DataFrame,
     target_column: str,
@@ -294,10 +309,7 @@ def run_lightgbm_importance(
 
     model.fit(X, y)
     importances = model.feature_importances_
-    total = float(sum(importances))
-    if total > 0:
-        return [float(i / total) for i in importances]
-    return [float(i) for i in importances]
+    return _normalize_importances(importances)
 
 
 def run_catboost_importance(
@@ -344,10 +356,7 @@ def run_catboost_importance(
 
     model.fit(X, y)
     importances = model.get_feature_importance()
-    total = float(sum(importances))
-    if total > 0:
-        return [float(i / total) for i in importances]
-    return [float(i) for i in importances]
+    return _normalize_importances(importances)
 
 
 def run_rf_baseline_importance(
@@ -370,10 +379,7 @@ def run_rf_baseline_importance(
 
     model.fit(X, y)
     importances = model.feature_importances_
-    total = float(sum(importances))
-    if total > 0:
-        return [float(i / total) for i in importances]
-    return [float(i) for i in importances]
+    return _normalize_importances(importances)
 
 
 def run_sklearn_permutation_importance(
@@ -1686,6 +1692,10 @@ class FeatureSelectionPipeline:
             output_format=self.config.output_format,
         )
 
+        # Shared by every "<output_stem>_<suffix>.csv" derived-output path
+        # below (group summary, SHAP interactions, synthetic suggestions).
+        stem = derive_output_stem(self.config.output_file)
+
         groups = self.config.feature_groups
         if not groups and self.config.group_by_prefix:
             groups = derive_prefix_groups(self.feature_names)
@@ -1697,7 +1707,6 @@ class FeatureSelectionPipeline:
                 shap_importance=shap_importance,
             )
             self.group_summary = group_summary
-            stem = derive_output_stem(self.config.output_file)
             groups_path = f"{stem}_groups.csv"
             group_summary.to_csv(groups_path, index=False)
             self.logger.info(
@@ -1723,7 +1732,6 @@ class FeatureSelectionPipeline:
                     ~self.interactions["feature_a"].str.startswith("__shadow_probe_")
                     & ~self.interactions["feature_b"].str.startswith("__shadow_probe_")
                 ].reset_index(drop=True)
-            stem = derive_output_stem(self.config.output_file)
             interactions_file = f"{stem}_interactions.csv"
             self.interactions.to_csv(interactions_file, index=False)
             self.logger.info(f"SHAP interaction values saved to {interactions_file}")
@@ -1743,7 +1751,6 @@ class FeatureSelectionPipeline:
                     # validation happens in _evaluate_synthetic_replacements.
                     encoder_source=train_val_data,
                 )
-                stem = derive_output_stem(self.config.output_file)
                 suggestions_file = f"{stem}_suggested_features.csv"
                 pd.DataFrame([vars(s) for s in self.suggested_features]).to_csv(
                     suggestions_file, index=False
