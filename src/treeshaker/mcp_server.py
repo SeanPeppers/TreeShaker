@@ -32,7 +32,7 @@ from .synthetic_features import SyntheticConfig
 from .utils import derive_output_stem
 
 try:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 except ImportError as exc:  # pragma: no cover - exercised only without extra installed
     raise ImportError(
         "The 'mcp' package is required to run the TreeShaker MCP server."
@@ -41,7 +41,7 @@ except ImportError as exc:  # pragma: no cover - exercised only without extra in
 
 logger = logging.getLogger(__name__)
 
-mcp = FastMCP("treeshaker")
+mcp = MCPServer("treeshaker")
 
 
 def _build_config(
