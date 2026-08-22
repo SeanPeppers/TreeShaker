@@ -307,8 +307,9 @@ def run_pipeline(
             random seeds and append stability_score / stability_votes columns.
             0 = disabled (default). Use with skip_tuning=True for reasonable
             runtime.
-        compute_confidence_scores: Compute calibrated confidence scores (0-1)
-            for each feature's recommendation (opt-in).
+        compute_confidence_scores: Compute a confidence heuristic score (0-1,
+            not a calibrated probability) for each feature's recommendation
+            (opt-in).
         streaming_eval_sample_size: Max rows used for the SHAP/permutation/MI/
             leakage/residual diagnostics when streaming is True; larger splits
             are sampled down to this. Ignored otherwise.
