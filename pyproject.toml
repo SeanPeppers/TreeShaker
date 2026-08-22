@@ -23,7 +23,7 @@ dependencies = [
 
     "shap>=0.52.0",
     "xgboost>=3.3.0",
-    "optuna>=3.0.0",
+    "optuna>=4.9.0",
     "pandas>=2.0.0,<3.0.0",
     "scikit-learn>=1.9.0",
     "numpy>=1.24.0",
@@ -32,7 +32,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "ruff>=0.15.18",
+    "ruff>=0.15.20",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "mypy>=1.8.0",
@@ -42,7 +42,7 @@ demo = [
 ]
 mcp = [
     "mcp>=1.28.1,<2",
-    "lxml>=4.9.0",
+    "lxml>=6.1.1",
 ]
 fast = [
     "treeshaker_lsh>=0.1.0",
@@ -55,7 +55,7 @@ catboost = [
     "catboost>=1.2.0",
 ]
 mlflow = [
-    "mlflow>=2.0.0",
+    "mlflow>=3.14.0",
 ]
 docs = [
 
