@@ -10,6 +10,7 @@ import xgboost as xgb
 from sklearn.datasets import make_classification, make_regression
 from sklearn.metrics import roc_auc_score
 
+from treeshaker.config import Config
 from treeshaker.importance import (
     compute_importance_divergence,
     compute_mutual_information,
@@ -18,6 +19,7 @@ from treeshaker.importance import (
     compute_shap_importance_delta,
     compute_shap_interactions,
 )
+from treeshaker.pipeline import FeatureSelectionPipeline
 from treeshaker.utils import get_metric_fn
 
 
@@ -635,3 +637,61 @@ def test_importance_divergence_single_feature_is_zero():
         np.array([0.5]), np.array([0.3]), np.array([0.1])
     )
     np.testing.assert_array_almost_equal(divergence, np.zeros(1))
+
+
+def test_pipeline_with_compute_train_importance(tmp_path):
+    """The compute_train_importance Config flag actually reaches the
+    pipeline's run(), not just compute_shap_importance_delta() in
+    isolation."""
+    csv_path = tmp_path / "data.csv"
+    np.random.seed(42)
+    df = pd.DataFrame(
+        {
+            "feat1": np.random.randn(50),
+            "feat2": np.random.randn(50),
+            "target": np.random.choice([0, 1], size=50),
+        }
+    )
+    df.to_csv(csv_path, index=False)
+
+    config = Config(
+        input_file=str(csv_path),
+        target_column="target",
+        task="binary",
+        compute_train_importance=True,
+        skip_tuning=True,
+    )
+    pipeline = FeatureSelectionPipeline(config)
+    results = pipeline.run()
+
+    assert "train_test_importance_delta" in results.columns
+    assert len(results["train_test_importance_delta"]) == 2
+
+
+def test_pipeline_with_compute_importance_divergence(tmp_path):
+    """The compute_importance_divergence Config flag actually reaches the
+    pipeline's run(), not just compute_importance_divergence() in
+    isolation."""
+    csv_path = tmp_path / "data.csv"
+    np.random.seed(42)
+    df = pd.DataFrame(
+        {
+            "feat1": np.random.randn(50),
+            "feat2": np.random.randn(50),
+            "target": np.random.choice([0, 1], size=50),
+        }
+    )
+    df.to_csv(csv_path, index=False)
+
+    config = Config(
+        input_file=str(csv_path),
+        target_column="target",
+        task="binary",
+        compute_importance_divergence=True,
+        skip_tuning=True,
+    )
+    pipeline = FeatureSelectionPipeline(config)
+    results = pipeline.run()
+
+    assert "importance_divergence" in results.columns
+    assert len(results["importance_divergence"]) == 2

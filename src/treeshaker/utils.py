@@ -286,49 +286,6 @@ def _read_csv_streaming(filepath: str, chunk_size: int) -> pd.DataFrame:
     return pd.concat(chunks, ignore_index=True)
 
 
-def _read_csv_polars(filepath: str) -> pd.DataFrame:
-    """Read a CSV using Polars and return a pandas DataFrame.
-
-    Polars' CSV parser is significantly faster than pandas (Rust-based,
-    multi-threaded) and uses less peak memory during parsing. The result is
-    converted to pandas so the rest of the pipeline is unchanged.
-
-    Raises ImportError with an actionable install message if polars is not
-    installed (optional dep: pip install treeshaker[polars]).
-    """
-    try:
-        import polars as pl
-    except ImportError as exc:
-        raise ImportError(
-            "use_polars=True requires polars: pip install treeshaker[polars]"
-        ) from exc
-    return pl.read_csv(filepath).to_pandas()
-
-
-def _read_csv_polars_streaming(filepath: str, chunk_size: int) -> pd.DataFrame:
-    """Read a CSV in Polars batches, downcast per batch, return pandas DataFrame.
-
-    Combines the Polars parser speed with the per-chunk numeric downcast from
-    the streaming path. Uses Polars' lazy API to read `chunk_size`-row slices,
-    converts each to pandas, applies _downcast_numeric, then concatenates.
-    """
-    try:
-        import polars as pl
-    except ImportError as exc:
-        raise ImportError(
-            "use_polars=True requires polars: pip install treeshaker[polars]"
-        ) from exc
-    lf = pl.scan_csv(filepath)
-    total = lf.select(pl.len()).collect().item()
-    if total == 0:
-        raise pd.errors.EmptyDataError("No columns to parse from file")
-    chunks = []
-    for start in range(0, total, chunk_size):
-        chunk_pd = lf.slice(start, chunk_size).collect().to_pandas()
-        chunks.append(_downcast_numeric(chunk_pd))
-    return pd.concat(chunks, ignore_index=True)
-
-
 def load_csv(
     filepath: str,
     target_column: str,
@@ -341,7 +298,6 @@ def load_csv(
     large_dataset_sample_frac: float = 0.5,
     streaming: bool = False,
     streaming_chunk_size: int = 100_000,
-    use_polars: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Load a CSV file and split it into train, validation, and test sets.
 
@@ -377,9 +333,6 @@ def load_csv(
             `pd.read_csv` call exactly as before.
         streaming_chunk_size: Rows per chunk when streaming=True. Ignored
             otherwise.
-        use_polars: If True, use Polars for CSV parsing (faster, lower peak
-            memory). Compatible with streaming=True (reads lazy batches via
-            Polars). Requires ``pip install treeshaker[polars]``.
 
     Returns:
         A tuple of (train_df, val_df, test_df), all including the target
@@ -401,18 +354,12 @@ def load_csv(
         )
 
     try:
-        if streaming and use_polars:
-            logger.info(f"Polars streaming read: {streaming_chunk_size}-row batches")
-            df = _read_csv_polars_streaming(filepath, streaming_chunk_size)
-        elif streaming:
+        if streaming:
             logger.info(
                 f"Streaming read enabled: reading in chunks of"
                 f" {streaming_chunk_size} rows with per-chunk numeric downcast"
             )
             df = _read_csv_streaming(filepath, streaming_chunk_size)
-        elif use_polars:
-            logger.info("Polars read enabled")
-            df = _read_csv_polars(filepath)
         else:
             df = pd.read_csv(filepath)
     except (pd.errors.EmptyDataError, pd.errors.ParserError) as exc:
