@@ -159,3 +159,83 @@ def test_config_raises_on_invalid_method():
             collinearity_threshold=0.5,
             collinearity_method="invalid_method",
         )
+
+
+def _make_gating_pipeline(
+    collinearity_threshold: float = 0.9,
+) -> FeatureSelectionPipeline:
+    """A pipeline instance with train_data/feature_names set directly, so
+    _apply_collinearity_gating can be tested as a pure function without
+    running the full pipeline (deterministic -- no dependence on how XGBoost
+    happens to split importance between correlated features)."""
+    config = Config(
+        input_file="x.csv",
+        target_column="target",
+        task="binary",
+        collinearity_threshold=collinearity_threshold,
+        collinearity_method="pearson",
+    )
+    pipeline = FeatureSelectionPipeline(config)
+    rng = np.random.default_rng(42)
+    base = rng.normal(size=100)
+    pipeline.train_data = pd.DataFrame(
+        {
+            # ~collinear with kept
+            "redundant": base + rng.normal(scale=0.001, size=100),
+            "kept": base,
+            "unrelated": rng.normal(size=100),
+            "target": rng.integers(0, 2, size=100),
+        }
+    )
+    pipeline.feature_names = ["redundant", "kept", "unrelated"]
+    return pipeline
+
+
+def test_collinearity_gating_downgrades_drop_correlated_with_keep():
+    """A Drop feature collinear with a Keep feature is downgraded to Caution."""
+    pipeline = _make_gating_pipeline()
+    recommendations = ["Drop", "Keep", "Drop"]
+    reasons = ["low importance", "", "low importance"]
+
+    updated_recs, updated_reasons = pipeline._apply_collinearity_gating(
+        recommendations, reasons
+    )
+
+    # "redundant" is collinear with "kept" (a Keep) -> demoted.
+    assert updated_recs[0] == "Caution"
+    assert "kept" in updated_reasons[0]
+    assert "low importance" in updated_reasons[0]  # original reason preserved
+    # "unrelated" has no collinear Keep partner -> stays Drop, untouched.
+    assert updated_recs[2] == "Drop"
+    assert updated_reasons[2] == "low importance"
+    # Keep itself is never touched.
+    assert updated_recs[1] == "Keep"
+
+
+def test_collinearity_gating_disabled_is_noop():
+    """collinearity_threshold=0 (default) leaves recommendations untouched."""
+    pipeline = _make_gating_pipeline(collinearity_threshold=0.0)
+    recommendations = ["Drop", "Keep", "Drop"]
+    reasons = ["low importance", "", "low importance"]
+
+    updated_recs, updated_reasons = pipeline._apply_collinearity_gating(
+        recommendations, reasons
+    )
+
+    assert updated_recs == recommendations
+    assert updated_reasons == reasons
+
+
+def test_collinearity_gating_leaves_drop_without_keep_partner_alone():
+    """A Drop feature whose cluster-mates are also Drop (no Keep) stays Drop."""
+    pipeline = _make_gating_pipeline()
+    # Both "redundant" and "kept" are Drop this time -- no Keep in the cluster.
+    recommendations = ["Drop", "Drop", "Keep"]
+    reasons = ["low importance", "low importance", ""]
+
+    updated_recs, updated_reasons = pipeline._apply_collinearity_gating(
+        recommendations, reasons
+    )
+
+    assert updated_recs == recommendations
+    assert updated_reasons == reasons
