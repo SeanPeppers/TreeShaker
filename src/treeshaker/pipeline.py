@@ -1076,6 +1076,52 @@ class FeatureSelectionPipeline:
 
         return updated_recommendations, updated_reasons
 
+    def _apply_shadow_probe_gating(self, results: pd.DataFrame) -> pd.DataFrame:
+        """
+        Downgrade Drop to Caution when shadow probes dispute it.
+
+        `shadow_probe_flag` (already computed on `results` by
+        add_shadow_probe_warnings) is False when a feature's importance
+        clears the empirical noise floor -- the importance level a
+        genuinely uninformative, randomly-shuffled column reaches. That's
+        an independent, distribution-relative check the fixed
+        shap/permutation-importance thresholds don't have (see Boruta and
+        similar shadow-feature methods in the feature-selection
+        literature). When it disputes a Drop the fixed thresholds
+        produced, that Drop isn't well-supported: downgrade to Caution
+        rather than leaving it as an outright Drop.
+
+        Only reachable when n_shadow_probes > 0 (opt-in, 0 by default) --
+        default pipeline behavior is unaffected.
+
+        Args:
+            results: The results DataFrame, already carrying
+                shadow_probe_flag (real feature rows only -- probe rows
+                must already be stripped).
+
+        Returns:
+            results, with any disputed Drop rows downgraded to Caution and
+            their reason updated in place.
+        """
+        results = results.copy()
+        disputed_drop_mask = (results["recommendation"] == "Drop") & (
+            ~results["shadow_probe_flag"]
+        )
+        for idx in results.index[disputed_drop_mask]:
+            results.loc[idx, "recommendation"] = "Caution"
+            note = (
+                "Beats the shadow-probe noise floor "
+                f"(shadow_probe_percentile={self.config.shadow_probe_percentile:.1f}) "
+                "despite the fixed importance threshold flagging it Drop; "
+                "the empirical noise-floor check disputes that call, so "
+                "this is no longer flagged as an outright Drop."
+            )
+            existing_reason = results.loc[idx, "reason"]
+            results.loc[idx, "reason"] = (
+                f"{existing_reason} {note}".strip() if existing_reason else note
+            )
+        return results
+
     def run(self) -> pd.DataFrame:
         """
         Execute the full feature selection pipeline.
@@ -1680,6 +1726,7 @@ class FeatureSelectionPipeline:
                 ~self.results["feature_name"].str.startswith("__shadow_probe_")
             ].reset_index(drop=True)
             self.results = add_shadow_probe_warnings(self.results, probe_threshold)
+            self.results = self._apply_shadow_probe_gating(self.results)
 
             real_indices = [
                 i
