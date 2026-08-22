@@ -991,6 +991,82 @@ class FeatureSelectionPipeline:
 
         return updated_recommendations, updated_reasons
 
+    def _apply_collinearity_gating(
+        self,
+        recommendations: list[str],
+        reasons: list[str],
+    ) -> tuple[list[str], list[str]]:
+        """
+        Downgrade Drop to Caution when a low-importance feature is collinear
+        with a feature the pipeline is keeping.
+
+        Permutation importance is known to be misleading under high
+        collinearity: shuffling one of two correlated-but-useful features
+        barely hurts the model, since its partner still carries the signal --
+        so both can end up with deflated importance and get flagged Drop,
+        even though the redundancy (not uselessness) is what's driving the
+        low score. When collinearity clustering is enabled and a Drop
+        feature shares a cluster with a Keep feature, that's a real
+        possibility, not evidence the Drop feature carries no signal on its
+        own -- downgrade to Caution rather than Drop.
+
+        Opt-in via collinearity_threshold (0 = disabled, the default); a
+        no-op when disabled, matching cluster_correlated_features' own
+        no-op-to-singletons behavior at threshold <= 0.
+
+        Args:
+            recommendations: Current list of recommendations (Drop/Caution/Keep).
+            reasons: Current list of reason strings.
+
+        Returns:
+            Tuple of (updated_recommendations, updated_reasons).
+        """
+        if self.config.collinearity_threshold <= 0:
+            return recommendations, reasons
+
+        from .collinearity import cluster_correlated_features
+
+        clusters = cluster_correlated_features(
+            self.X_train if self.X_train is not None else pd.DataFrame(),
+            self.feature_names,
+            self.config.collinearity_threshold,
+            cast(Literal["spearman", "pearson"], self.config.collinearity_method),
+        )
+
+        updated_recommendations = list(recommendations)
+        updated_reasons = list(reasons)
+        feature_index = {name: i for i, name in enumerate(self.feature_names)}
+
+        for cluster in clusters:
+            if len(cluster) < 2:
+                continue
+            cluster_indices = [feature_index[f] for f in cluster]
+            keep_mates = [
+                f
+                for f, i in zip(cluster, cluster_indices, strict=True)
+                if updated_recommendations[i] == "Keep"
+            ]
+            if not keep_mates:
+                continue
+            for feat, i in zip(cluster, cluster_indices, strict=True):
+                if updated_recommendations[i] != "Drop":
+                    continue
+                updated_recommendations[i] = "Caution"
+                mates = ", ".join(m for m in keep_mates if m != feat) or keep_mates[0]
+                note = (
+                    f"Correlated with kept feature(s) {mates} (collinearity "
+                    f"threshold {self.config.collinearity_threshold:.2f}); low "
+                    f"importance may reflect redundancy rather than "
+                    f"uselessness, so demoted from Drop to Caution."
+                )
+                updated_reasons[i] = (
+                    f"{updated_reasons[i]} {note}".strip()
+                    if updated_reasons[i]
+                    else note
+                )
+
+        return updated_recommendations, updated_reasons
+
     def run(self) -> pd.DataFrame:
         """
         Execute the full feature selection pipeline.
@@ -1381,6 +1457,23 @@ class FeatureSelectionPipeline:
                     for i, rec in enumerate(recommendations):
                         if rec == "Caution":
                             result_columns["confidence_score"][i] = 0.5
+
+        # Collinearity gating runs after stability gating so it only
+        # reconsiders whatever Drops remain once other adjustments have
+        # already been applied.
+        if self.config.collinearity_threshold > 0:
+            recommendations, reasons = self._apply_collinearity_gating(
+                recommendations, reasons
+            )
+            result_columns["recommendation"] = recommendations
+            result_columns["reason"] = reasons
+            if (
+                self.config.compute_confidence_scores
+                and "confidence_score" in result_columns
+            ):
+                for i, rec in enumerate(recommendations):
+                    if rec == "Caution":
+                        result_columns["confidence_score"][i] = 0.5
 
         if self.config.check_residuals:
             result_columns["residual_correlation"] = residual_correlation
