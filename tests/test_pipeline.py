@@ -793,6 +793,56 @@ def test_pipeline_flag_leakage_importance_mismatch_detects_contradiction(
     assert not any("high importance" in str(r) for r in drop_rows["reason"])
 
 
+def test_pipeline_skip_leakage_check_actually_skips_leakage_detection(tmp_path):
+    """skip_leakage_check=True must not still run leakage detection under the
+    hood. Regression test: skip_leakage_check used to be a no-op because an
+    earlier, unconditional block already computed and populated
+    leakage_warnings before the (then-redundant) gated block ran."""
+    np.random.seed(42)
+    n_samples = 200
+    target = np.random.binomial(1, 0.5, n_samples)
+    # Same construction as the mismatch-detection test above: correlation
+    # ~0.96 with target reliably triggers a leakage warning (threshold 0.95).
+    feature_suspect = 0.96 * target.astype(float) + 0.04 * np.random.randn(n_samples)
+    feature_1 = np.random.randn(n_samples)
+    feature_2 = np.random.randn(n_samples)
+    feature_3 = np.random.randn(n_samples)
+
+    df = pd.DataFrame(
+        {
+            "feature_suspect": feature_suspect,
+            "feature_1": feature_1,
+            "feature_2": feature_2,
+            "feature_3": feature_3,
+            "target": target,
+        }
+    )
+    csv_path = tmp_path / "leaky.csv"
+    df.to_csv(csv_path, index=False)
+
+    # Default: leakage detection runs, feature_suspect's leakage warning
+    # routes it to Caution regardless of its (high) importance.
+    checked_config = make_fast_config(str(csv_path), "binary", tmp_path)
+    checked_results = FeatureSelectionPipeline(checked_config).run()
+    checked_row = checked_results[
+        checked_results["feature_name"] == "feature_suspect"
+    ].iloc[0]
+    assert checked_row["recommendation"] == "Caution"
+
+    # skip_leakage_check=True: no leakage warning should be generated at
+    # all, so feature_suspect (highly important, nothing else wrong with
+    # it) should NOT be routed to Caution by leakage.
+    skipped_config = make_fast_config(
+        str(csv_path), "binary", tmp_path, skip_leakage_check=True
+    )
+    skipped_results = FeatureSelectionPipeline(skipped_config).run()
+    skipped_row = skipped_results[
+        skipped_results["feature_name"] == "feature_suspect"
+    ].iloc[0]
+    assert skipped_row["recommendation"] != "Caution"
+    assert "leak" not in skipped_row["reason"].lower()
+
+
 def test_pipeline_chronological_split_preserves_order(binary_data, tmp_path):
     """When time_column is set, splits should respect chronological order."""
     # Add a time column to the test data

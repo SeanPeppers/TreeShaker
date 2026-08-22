@@ -175,7 +175,7 @@ def run_boruta_shap(
     n_iterations: int = 20,
 ) -> list[str]:
     """Run Boruta feature selection and return decisions per feature."""
-    from scipy.stats import binomtest
+    from scipy.stats import binomtest, false_discovery_control
 
     if not feature_names:
         return []
@@ -215,13 +215,19 @@ def run_boruta_shap(
 
         hits += (real_importances > max_shadow_importance).astype(int)
 
+    # Testing every feature against the same alpha independently inflates
+    # false Confirmed/Rejected calls as feature count grows -- correct across
+    # all of this run's per-feature p-values together (Benjamini-Hochberg)
+    # before thresholding, rather than each feature's raw p-value alone.
+    raw_pvalues = [binomtest(int(h), n_iterations, 0.5).pvalue for h in hits]
+    corrected_pvalues = false_discovery_control(raw_pvalues)
+
     decisions = []
-    for h in hits:
-        res = binomtest(int(h), n_iterations, 0.5)
+    for h, pvalue in zip(hits, corrected_pvalues, strict=True):
         hit_rate = h / n_iterations
-        if res.pvalue < 0.05 and hit_rate > 0.5:
+        if pvalue < 0.05 and hit_rate > 0.5:
             decisions.append("Confirmed")
-        elif res.pvalue < 0.05 and hit_rate < 0.5:
+        elif pvalue < 0.05 and hit_rate < 0.5:
             decisions.append("Rejected")
         else:
             decisions.append("Tentative")
@@ -1176,32 +1182,6 @@ class FeatureSelectionPipeline:
         temporal_structure_warnings: dict[str, list[str]] = {
             name: [] for name in self.feature_names
         }
-        leakage_detector = LeakageDetector(
-            self.config.leakage_config, screening_mode=self.config.leakage_screening
-        )
-        combined_full = pd.concat(
-            [self.train_data, self.val_data, self.test_data], ignore_index=True
-        )
-        # The target-correlation / proxy / multicollinearity checks in
-        # detect() are order-independent statistics, so under streaming they
-        # run on a bounded random sample. detect_temporal_structure, by
-        # contrast, measures order-dependent autocorrelation -- a random
-        # sample would be meaningless -- so it always sees the full, ordered
-        # frame regardless of streaming.
-        combined_data = self._eval_sample(combined_full)
-        leakage_warnings = leakage_detector.detect(
-            df=combined_data,
-            target_column=self.config.target_column,
-            feature_names=self.feature_names,
-            shap_importance=shap_importance,
-            task=self.config.task,
-        )
-        temporal_structure_warnings = leakage_detector.detect_temporal_structure(
-            df=combined_full,
-            feature_names=self.feature_names,
-        )
-
-        # Check for look-ahead leakage if chronological split is enabled
         lookahead_warnings: dict[str, list[str]] = {
             name: [] for name in self.feature_names
         }
@@ -1209,9 +1189,16 @@ class FeatureSelectionPipeline:
             leakage_detector = LeakageDetector(
                 self.config.leakage_config, screening_mode=self.config.leakage_screening
             )
-            combined_data = pd.concat(
+            combined_full = pd.concat(
                 [self.train_data, self.val_data, self.test_data], ignore_index=True
             )
+            # The target-correlation / proxy / multicollinearity checks in
+            # detect() are order-independent statistics, so under streaming
+            # they run on a bounded random sample. detect_temporal_structure,
+            # by contrast, measures order-dependent autocorrelation -- a
+            # random sample would be meaningless -- so it always sees the
+            # full, ordered frame regardless of streaming.
+            combined_data = self._eval_sample(combined_full)
             leakage_warnings = leakage_detector.detect(
                 df=combined_data,
                 target_column=self.config.target_column,
@@ -1220,7 +1207,7 @@ class FeatureSelectionPipeline:
                 task=self.config.task,
             )
             temporal_structure_warnings = leakage_detector.detect_temporal_structure(
-                df=combined_data,
+                df=combined_full,
                 feature_names=self.feature_names,
             )
 
@@ -1409,9 +1396,10 @@ class FeatureSelectionPipeline:
             )
 
         if self.config.use_boruta:
+            train_val_data = self._train_val_data()
             result_columns["boruta_decision"] = run_boruta_shap(
                 model=self.model,
-                data=self.test_data,
+                data=train_val_data,
                 target_column=self.config.target_column,
                 feature_names=self.feature_names,
                 task=self.config.task,
@@ -1440,8 +1428,9 @@ class FeatureSelectionPipeline:
             )
 
         if self.config.use_catboost:
+            train_val_data = self._train_val_data()
             result_columns["catboost_importance"] = run_catboost_importance(
-                data=self.test_data,
+                data=train_val_data,
                 target_column=self.config.target_column,
                 feature_names=self.feature_names,
                 task=self.config.task,
@@ -1623,9 +1612,17 @@ class FeatureSelectionPipeline:
             )
 
         if self.config.compute_shap_interactions:
+            # Interaction discovery and candidate MI-screening both run on
+            # train+val, not test: scoring candidates against the same rows
+            # used later to validate them (in _evaluate_synthetic_replacements)
+            # would let a synthetic feature "win" purely from fitting held-out
+            # noise it was mined from. The real held-out check stays in
+            # _evaluate_synthetic_replacements, which fits on train+val and
+            # scores on self.test_data, untouched by this.
+            train_val_data = self._train_val_data()
             self.interactions = compute_shap_interactions(
                 model=self.model,
-                data=self.test_data,
+                data=train_val_data,
                 feature_names=full_feature_names,
             )
             if self.interactions is not None and self.config.n_shadow_probes > 0:
@@ -1640,16 +1637,18 @@ class FeatureSelectionPipeline:
 
             if self.config.synthetic_config.synthesize_from_interactions:
                 self.suggested_features = suggest_synthetic_features(
-                    data=self.test_data,
+                    data=train_val_data,
                     target_column=self.config.target_column,
                     interactions=self.interactions,
                     task=self.config.task,
                     random_seed=self.config.random_seed,
                     config=self.config.synthetic_config,
-                    # Fit categorical target-mean encoding on train+val, not on
-                    # the held-out test rows the candidate MI is scored over,
-                    # so a categorical synthetic's MI isn't inflated by leakage.
-                    encoder_source=self._train_val_data(),
+                    # Categorical target-mean encoding is fit in-sample on
+                    # train+val here (screening only) since data and
+                    # encoder_source are now the same split -- there's no
+                    # third split to fit it on separately. Real held-out
+                    # validation happens in _evaluate_synthetic_replacements.
+                    encoder_source=train_val_data,
                 )
                 stem = derive_output_stem(self.config.output_file)
                 suggestions_file = f"{stem}_suggested_features.csv"
