@@ -12,6 +12,7 @@ import pytest
 
 from treeshaker.mcp_server import (
     _build_config,
+    analyze_text_importance,
     get_recommendations,
     inspect_dataset,
     list_config_schema,
@@ -264,3 +265,43 @@ def test_list_config_schema_expands_other_nested_dataclasses(field_name):
     field = next(f for f in schema["fields"] if f["name"] == field_name)
     assert "fields" in field
     assert len(field["fields"]) > 0
+
+
+def test_analyze_text_importance(tmp_path):
+    texts_file = tmp_path / "texts.txt"
+    texts_file.write_text(
+        "this movie is good\nthis movie is bad\na good story overall\n"
+    )
+    output_path = str(tmp_path / "text_results.csv")
+
+    result = analyze_text_importance(
+        predict_fn="text_cli_fixtures:predict",
+        texts_file=str(texts_file),
+        output_path=output_path,
+        top_n=5,
+    )
+
+    assert "error" not in result
+    assert isinstance(result["top_tokens"], list)
+    assert result["top_tokens"][0]["token"] == "good"
+    assert result["output_file"] == output_path
+    assert os.path.exists(output_path)
+
+
+def test_analyze_text_importance_bad_predict_fn_path():
+    result = analyze_text_importance(
+        predict_fn="not_a_real_module:predict",
+        texts_file="irrelevant.txt",
+    )
+    assert "error" in result
+
+
+def test_analyze_text_importance_csv_requires_text_column(tmp_path):
+    csv_path = tmp_path / "texts.csv"
+    pd.DataFrame({"review": ["good movie", "bad movie"]}).to_csv(csv_path, index=False)
+    result = analyze_text_importance(
+        predict_fn="text_cli_fixtures:predict",
+        texts_file=str(csv_path),
+    )
+    assert "error" in result
+    assert "text-column" in result["error"] or "text_column" in result["error"]

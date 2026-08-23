@@ -67,6 +67,7 @@ docs = [
 [project.scripts]
 treeshaker = "treeshaker.cli:main"
 treeshaker-mcp = "treeshaker.mcp_server:main"
+treeshaker-text = "treeshaker.cli_text:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/treeshaker"]
