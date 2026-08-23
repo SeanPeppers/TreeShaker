@@ -25,6 +25,7 @@ Most feature-importance tools give you a single number per feature from a single
 - [Configuration reference](config_reference.md) — All flags and options
 - [CLI reference](cli_reference.md) — Complete command-line guide
 - [MCP server](mcp_server.md) — Use TreeShaker via Claude Code
+- [Text/transformer token importance](text_importance.md) — Which tokens drove a text model's prediction
 - [Contributing](contributing.md) — Develop locally
 
 ```{toctree}
@@ -40,5 +41,6 @@ dfe
 config_reference
 cli_reference
 mcp_server
+text_importance
 contributing
 ```

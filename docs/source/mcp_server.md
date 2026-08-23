@@ -161,6 +161,15 @@ Introspect the `Config` dataclass (and nested sub-configs) so a client can disco
 - Validating client-provided overrides for `run_pipeline`'s `config_overrides` parameter
 - Building UI for configuration
 
+### analyze_text_importance
+
+Token-level SHAP attribution for text/transformer models — a separate,
+lightweight tool from `run_pipeline` (text has no CSV/feature-name shape to
+route through the tabular pipeline). See
+[Text/transformer token importance](text_importance.md) for full details,
+including the `predict_fn`/`tokenizer` dotted-path convention (an MCP tool
+call can't carry a live Python callable).
+
 ## Example workflows
 
 ### Quick pipeline run from Claude Code

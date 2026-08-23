@@ -24,11 +24,13 @@ from typing import Any, Literal, get_type_hints
 
 import pandas as pd
 
+from .cli_text import _load_dotted_path, _load_texts
 from .config import BootstrapConfig, Config, XGBoostConfig
 from .dtype_handling import _looks_like_date_strings, _looks_like_free_text
 from .exceptions import TreeShakerError
 from .pipeline import FeatureSelectionPipeline
 from .synthetic_features import SyntheticConfig
+from .text_importance import TextConfig, TextImportancePipeline
 from .utils import derive_output_stem
 
 try:
@@ -591,6 +593,65 @@ def list_config_schema() -> dict:
         expanded inline under their respective field's "fields" key.
     """
     return {"fields": _describe_dataclass_fields(Config)}
+
+
+@mcp.tool()
+def analyze_text_importance(
+    predict_fn: str,
+    texts_file: str,
+    output_path: str = "text_results.csv",
+    text_column: str | None = None,
+    tokenizer: str | None = None,
+    top_n: int = 20,
+) -> dict:
+    """Token-level SHAP attribution for text/transformer models -- which
+    tokens drove each prediction (see text_importance.py). A separate,
+    lightweight path from run_pipeline: text has no CSV/feature-name shape
+    to route through the tabular pipeline.
+
+    Args:
+        predict_fn: Dotted path "module:function" to a callable taking
+            list[str] -> np.ndarray of shape (n_texts,) or
+            (n_texts, n_classes). An MCP tool call can't carry a live
+            Python callable, so this is resolved the same way as the
+            treeshaker-text CLI's --predict-fn.
+        texts_file: Path to a .txt file (one text per line) or a .csv file.
+        output_path: Where the aggregate results table is saved.
+        text_column: Column name holding the text; required when
+            texts_file is a CSV.
+        tokenizer: Optional dotted path "module:tokenizer" passed to
+            shap.maskers.Text (e.g. a Hugging Face tokenizer). None uses
+            SHAP's own whitespace/punctuation tokenizer.
+        top_n: Number of top tokens (by mean_abs_shap) to keep.
+
+    Returns:
+        {"top_tokens": [{"token": ..., "mean_abs_shap": ...,
+        "n_occurrences": ...}, ...], "output_file": output_path} on
+        success, or {"error": "<message>"} on failure.
+    """
+    try:
+        predict_fn_obj = _load_dotted_path(predict_fn)
+        tokenizer_obj = _load_dotted_path(tokenizer) if tokenizer else None
+        texts = _load_texts(texts_file, text_column)
+    except (ValueError, ImportError, OSError) as exc:
+        return {"error": str(exc)}
+
+    try:
+        pipeline = TextImportancePipeline(
+            predict_fn=predict_fn_obj,
+            texts=texts,
+            config=TextConfig(
+                tokenizer=tokenizer_obj, top_n=top_n, output_file=output_path
+            ),
+        )
+        results = pipeline.run()
+    except TreeShakerError as exc:
+        return {"error": str(exc)}
+
+    return {
+        "top_tokens": results.to_dict(orient="records"),
+        "output_file": output_path,
+    }
 
 
 def main() -> None:
