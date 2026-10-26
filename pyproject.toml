@@ -78,6 +78,8 @@ packages = ["src/treeshaker"]
 # ancient numba (0.53.1, 2021) that lacks Python 3.13 wheels. Cap numpy so
 # the resolver stays on modern, wheel-available numba/llvmlite releases.
 constraint-dependencies = ["numpy<2.5"]
+# gradio caps pillow<13, but pillow 12.x carries advisories fixed in 13.0.0.
+override-dependencies = ["pillow>=13.0.0"]
 
 [tool.uv.sources]
 treeshaker_lsh = { path = "rust/treeshaker_lsh" }
