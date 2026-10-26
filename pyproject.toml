@@ -36,6 +36,9 @@ dev = [
     "pytest>=9.1.1,<10",
     "pytest-cov>=7.1.0,<8",
     "mypy>=1.8.0,<3",
+    "pandas-stubs",
+    "pip-audit",
+    "hypothesis",
 ]
 demo = [
     "gradio>=6.24.0,<7",
