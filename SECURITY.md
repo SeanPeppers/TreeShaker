@@ -2,8 +2,14 @@
 
 ## Reporting a vulnerability
 
-GitHub's private security advisory flow requires the dependency graph, which isn't available on a private repo without GitHub Advanced Security. Until this repo goes public (see [PRE_PUBLIC_CHECKLIST.md](PRE_PUBLIC_CHECKLIST.md)), email **gagepeppers@gmail.com** instead of filing a public issue. Include reproduction steps and affected version.
+Use GitHub's private vulnerability reporting: [report a vulnerability](https://github.com/SeanPeppers/TreeShaker/security/advisories/new). Include reproduction steps and the affected version. Expect a first response within 7 days.
 
-## Dependency scanning
+## Supported versions
 
-`pip-audit` runs in CI on every push and pull request against `main` (see `.github/workflows/lint.yml`), and Dependabot opens weekly PRs for outdated dependencies (`.github/dependabot.yml`).
+Only the latest release on `main` receives security fixes.
+
+## Dependency and code scanning
+
+- `pip-audit` and `dependency-review-action` check dependencies on every pull request, and Dependabot opens weekly update PRs (`.github/dependabot.yml`).
+- CodeQL, zizmor, gitleaks, and OpenSSF Scorecard run in CI (`.github/workflows/`).
+- `main` requires a pull request and passing status checks before merge.
