@@ -55,11 +55,14 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+
       - name: Install package with dev dependencies
-        run: pip install -e ".[dev,demo,mcp,mlflow]"
+        run: uv sync --locked --extra dev --extra demo --extra mcp --extra mlflow
 
       - name: Run pytest
-        run: pytest
+        run: uv run pytest
 
       - name: Upload coverage to Codecov
         if: always()
@@ -85,11 +88,14 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+
       - name: Install package with docs dependencies
-        run: pip install -e ".[docs]"
+        run: uv sync --locked --extra docs
 
       - name: Build docs (warnings as errors)
-        run: sphinx-build -W -b html docs/source /tmp/treeshaker-docs-build
+        run: uv run sphinx-build -W -b html docs/source /tmp/treeshaker-docs-build
 
   mypy:
     runs-on: ubuntu-latest
@@ -108,11 +114,14 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install mypy
-        run: pip install mypy pandas-stubs
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+
+      - name: Install dependencies (pinned via uv.lock)
+        run: uv sync --locked --extra dev
 
       - name: Type check with mypy
-        run: mypy src/
+        run: uv run mypy src/
 
   doc-sync:
     runs-on: ubuntu-latest
@@ -187,17 +196,14 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Upgrade pip
-        run: pip install --upgrade pip
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
 
-      - name: Install project
-        run: pip install -e .
-
-      - name: Install pip-audit
-        run: pip install pip-audit
+      - name: Install dependencies (pinned via uv.lock)
+        run: uv sync --locked --extra dev
 
       - name: Run pip-audit
-        run: pip-audit
+        run: uv run pip-audit
 
   dependency-review:
     runs-on: ubuntu-latest
