@@ -16,14 +16,14 @@ crate-type = ["cdylib"]
 # binary that needs them resolved at link time. maturin enables it via
 # `--features pyo3/extension-module` (see pyproject.toml's
 # [tool.maturin] `features`), so release builds are unaffected.
-pyo3 = { version = "0.29" }
-numpy = "0.29"
+pyo3 = { version = "0.30" }
+numpy = "0.30"
 rand = "0.10"
 rand_chacha = "0.10"
 rand_distr = "0.6"
 
 [dev-dependencies]
-pyo3 = { version = "0.29", features = ["auto-initialize"] }
+pyo3 = { version = "0.30", features = ["auto-initialize"] }
 
 [profile.release]
 lto = true
