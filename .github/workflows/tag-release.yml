@@ -16,6 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
     steps:
       - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
@@ -65,3 +66,23 @@ jobs:
             --target "${{ github.sha }}" \
             --title "$tag" \
             --generate-notes
+
+      - name: Install uv
+        if: steps.version_check.outputs.changed == 'true'
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+
+      - name: Install cosign
+        if: steps.version_check.outputs.changed == 'true'
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Build, sign with Sigstore, and attach to the release
+        if: steps.version_check.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version_check.outputs.version }}
+        run: |
+          uv build
+          for f in dist/*; do
+            cosign sign-blob --yes --bundle "${f}.sigstore.json" "$f"
+          done
+          gh release upload "v${VERSION}" dist/* --clobber
