@@ -1,6 +1,7 @@
 # TreeShaker
 
 [![Lint](https://github.com/SeanPeppers/TreeShaker/actions/workflows/lint.yml/badge.svg)](https://github.com/SeanPeppers/TreeShaker/actions/workflows/lint.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/SeanPeppers/TreeShaker/badge)](https://scorecard.dev/viewer/?uri=github.com/SeanPeppers/TreeShaker)
 ![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)
 ![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)
