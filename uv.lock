@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -1267,7 +1267,7 @@ wheels = [
 
 [[package]]
 name = "gradio"
-version = "6.30.0"
+version = "6.31.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -1299,9 +1299,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "uvicorn" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/37/7b/62d5809a988fa60b33ace94b13c36828e4869ffc296cb5adbda694583736/gradio-6.30.0.tar.gz", hash = "sha256:a6ae3f803bf5c15049390bec3b22eb7198f1f2649fd3b2136441639b294bd34a", size = 45095032, upload-time = "2026-10-08T22:24:16.833Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/68/98/a76721a95bebc678b8a89c174d72292b3e99b2e4b387b77965d2797a1b52/gradio-6.31.0.tar.gz", hash = "sha256:40cf094fe8ea1b8ada0fc4c10b685c4c5f09c4061d34c073be25bab342e14e22", size = 45105255, upload-time = "2026-10-28T03:41:40.697Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4a/dc/508968f50e8c6d067f7821b5e18a180a74589621f10f4680f8d23b90564f/gradio-6.30.0-py3-none-any.whl", hash = "sha256:aae3aa81ec9f44e55781b498ad2ba12b117aa512e8d2bb0ef3e52af7f2ee6305", size = 31365745, upload-time = "2026-10-08T22:24:13.452Z" },
+    { url = "https://files.pythonhosted.org/packages/17/03/c1fdcfe84d1dce2a75921654e7b2075b251f7d48904d2b6006a2556a16b5/gradio-6.31.0-py3-none-any.whl", hash = "sha256:7b50b9b6a2d23cd02851ad4c8b1c8312c88d8b911d1f29c93f9761c98348a64a", size = 31374795, upload-time = "2026-10-28T03:41:37.66Z" },
 ]
 
 [[package]]
@@ -4166,7 +4166,7 @@ mlflow = [
 requires-dist = [
     { name = "catboost", marker = "extra == 'catboost'", specifier = ">=1.2.0,<2" },
     { name = "furo", marker = "extra == 'docs'", specifier = ">=2025.12.19" },
-    { name = "gradio", marker = "extra == 'demo'", specifier = ">=6.24.0,<7" },
+    { name = "gradio", marker = "extra == 'demo'", specifier = ">=6.31.0,<7" },
     { name = "hypothesis", marker = "extra == 'dev'" },
     { name = "lightgbm", marker = "extra == 'lightgbm'", specifier = ">=4.7.0,<5" },
     { name = "lxml", marker = "extra == 'mcp'", specifier = ">=6.1.1,<7" },

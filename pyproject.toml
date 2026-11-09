@@ -41,7 +41,7 @@ dev = [
     "hypothesis",
 ]
 demo = [
-    "gradio>=6.24.0,<7",
+    "gradio>=6.31.0,<7",
 ]
 mcp = [
     "mcp>=2.0.0,<3",
